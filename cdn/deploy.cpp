@@ -13,8 +13,6 @@
 #define NETWORK_NODE_MAX_NUM 1000
 #define MAX_LINK_NUM_PER_NODE 20
 
-#define SERVER_NUM  3
-
 #define NETWORK_PATH_MAX_NUM 50000
 #define NETWORK_MAX_NUM_PER_PATH 1000
 
@@ -54,6 +52,8 @@ int networkLinkNum = 0;
 int userNodeNum = 0;
 int allCost = 0;
 
+bool restartFlag = false;
+
 int tmp = 0;
 
 void init() 
@@ -72,11 +72,11 @@ void init()
 void bubbleSortUserNode()
 {
     for(int i=0; i<userNodeNum; i++){
-        for(int j=i; j<(userNodeNum-1); j++){
-            if(userNode[j].bandwidth < userNode[j+1].bandwidth){
-                UserNode tmp = userNode[j+1];
-                userNode[j+1] = userNode[j];
-                userNode[j] = tmp;
+        for(int tmpi=i+1; tmpi<userNodeNum; tmpi++){
+            if(userNode[i].bandwidth < userNode[tmpi].bandwidth){
+                UserNode tmp = userNode[tmpi];
+                userNode[tmpi] = userNode[i];
+                userNode[i] = tmp;
             }
         }
     }
@@ -242,27 +242,48 @@ void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
 
 }
 
-void bubbleSort(int *arrayHead, int *relationArray, int memNum)
+typedef struct ServerInfo{
+    int serverID;
+    int serverFlow;
+    int weigth;
+}ServerInfo, *ServerInfoPointer;
+void bubbleSort(ServerInfoPointer serverInfoPointer, int memNum)
 {
     for(int i=0; i<memNum; i++){
-        for(int j=i; j<(memNum-1); j++){
-            if(arrayHead[j] > arrayHead[j+1]){
-                int tmp = arrayHead[j+1];
-                arrayHead[j+1] = arrayHead[j];
-                arrayHead[j] = tmp;
-                tmp = relationArray[j+1];
-                relationArray[j+1] = relationArray[j];
-                relationArray[j] = tmp;
+        for(int tmpi=i+1; tmpi<memNum; tmpi++){
+            if(serverInfoPointer[i].serverFlow*serverInfoPointer[i].weigth < serverInfoPointer[tmpi].serverFlow*serverInfoPointer[tmpi].weigth){
+                ServerInfo tmp = serverInfoPointer[tmpi];
+                serverInfoPointer[tmpi] = serverInfoPointer[i];
+                serverInfoPointer[i] = tmp;
             }
         }
     }
 }
 
+bool isDirectConnect(int networkNodeID1, int networkNodeID2)
+{    
+    EdgePointer pointer;
+    pointer = networkNode[networkNodeID1].nextEdge;
+    int nextNetworkNodeID;
+    while (pointer != NULL) {
+        if ( networkNode->curNetworkNodeID == pointer->networkNodeID1) {
+            nextNetworkNodeID = pointer->networkNodeID2;
+            pointer = pointer->edge1;
+        } else {
+            nextNetworkNodeID = pointer->networkNodeID1;
+            pointer = pointer->edge2;
+        }
+        if(nextNetworkNodeID == networkNodeID2)
+            return true;
+    }
+    return false;
+}
+
 void getServerID(int *serverID, int serverNum)
 {
-    int *allFlow = (int *)malloc(sizeof(int)*serverNum);
     vector<int> mustServerID, mustServerAllFlow;
-    memset(allFlow, 0, sizeof(int)*serverNum);
+    ServerInfo serverInfo[NETWORK_NODE_MAX_NUM];        // 为啥这里不能是数组指针
+    int count = 0;
     printf("=====================getServerID\n");
     for(int i=0; i<NETWORK_NODE_MAX_NUM; i++){
         if (networkNode[i].nextEdge == NULL) {
@@ -280,6 +301,7 @@ void getServerID(int *serverID, int serverNum)
                     pointer = pointer->edge2;
                 }
             }
+            // 判断必选服务器
             printf("networkNode[%d] flow is: %d\n", i, tmpForAllFlow);
             for(int tmpi=0; tmpi<userNodeNum; tmpi++){
                 if((networkNode[i].curNetworkNodeID == userNode[i].conNetNodeID) && \
@@ -288,25 +310,38 @@ void getServerID(int *serverID, int serverNum)
                     mustServerAllFlow.push_back(tmpForAllFlow);
                 }
             }
-            if (tmpForAllFlow > *allFlow) {
-                // printf("networkNode[%d] is the max flow: %d\n", i, tmpForAllFlow);
-                *allFlow = tmpForAllFlow;
-                *serverID = i;
-                // printf("before bubbleSort:\n");
-                // for(int i=0; i<serverNum; i++){
-                //     printf("%d, ", allFlow[i]);
-                // }
-                bubbleSort(allFlow, serverID, serverNum);
-                // printf("\nafter bubbleSort:\n");
+            ServerInfoPointer newServerInfo = (ServerInfoPointer)malloc(sizeof(ServerInfo)*networkNodeNum);
+            if(newServerInfo != NULL){
+                newServerInfo->serverID = networkNode[i].curNetworkNodeID;
+                newServerInfo->serverFlow = tmpForAllFlow;
+                newServerInfo->weigth = 100;
+                serverInfo[count++] = *newServerInfo;
             }
         }   
+        
+    }
+    bubbleSort(serverInfo, networkNodeNum);
+    for(int i=0; i<serverNum; i++){
+        serverID[i] = serverInfo[i].serverID;
+        serverInfo[i].weigth *= 0.8;
+        for(int tmpi=i; tmpi<networkNodeNum; tmpi++){
+            if((serverInfo[tmpi].weigth == 100) && 
+                    isDirectConnect(i, tmpi)){
+                serverInfo[tmpi].weigth *= 0.8;
+            }
+        }
+        bubbleSort(serverInfo, networkNodeNum);
+    }
+    for(int i=0; i<networkNodeNum; i++){
+        printf("ID:%d, flow:%d, flow*weight:%d\n", serverInfo[i].serverID, serverInfo[i].serverFlow, serverInfo[i].serverFlow*serverInfo[i].weigth);
     }
     for(int i=0; i<(int)mustServerID.size(); i++){
         printf("serverID:%d is mustServerID\n", mustServerID[mustServerID.size()-1]);
         serverID[serverNum-i] = mustServerID[mustServerID.size()-1];
     }
     for(int i=0; i<serverNum; i++){
-        printf("serverID:%d\tmaxFlow:%d\n", serverID[i], allFlow[i]);
+        printf("serverID:%d\tmaxFlow:%d\n", serverInfo[i].serverID, serverInfo[i].serverFlow);
+        serverID[i] = serverInfo[i].serverID;
     }
 }
 
@@ -512,7 +547,7 @@ int getNetworkNodeIDLinkNum(NetworkNodePointer networkNode)
     return networkNodeIDLinkNum;
 }
 
-void calcFlowPath(int *serverID, int serverNum)
+bool calcFlowPath(int *serverID, int serverNum)
 {
     int *tmpForPreNetworkNodeID, *preNetworkNodeID;    
     printf("==calcFlowPath\n");
@@ -585,8 +620,8 @@ void calcFlowPath(int *serverID, int serverNum)
                 printf("\n");
             }
             if(noPathcount >= serverNum){
-                printf("no server to the userNode[%d]:%d flow:%d  > allFlow:%d\n", i, userNode[i].conNetNodeID, userNode[i].bandwidth, allFlow);
-                break;
+                printf("ERROR: no server to the userNode[%d]:%d flow:%d  > allFlow:%d\n", i, userNode[i].conNetNodeID, userNode[i].bandwidth, allFlow);
+                return false;
             }
             // printf("previous Node ID:\n");
             // for(int i=0; i<networkNodeNum; i++){
@@ -658,7 +693,24 @@ DirectConnect:
                 break;
         }
     }
+    return true;
 }
+// 清除当前流，重新开始
+void clearAllFlow(NetworkNodePointer networkNode)
+{
+    EdgePointer pointer;
+    pointer = networkNode->nextEdge;
+    while (pointer != NULL) {
+        pointer->flow = 0;
+        if ( networkNode->curNetworkNodeID == pointer->networkNodeID1) {
+            pointer = pointer->edge1;
+        } else {
+            pointer = pointer->edge2;
+        }
+        // 如果在这里采用pointer访问数据，则可能此时pointer为空，所以会有segment core问题
+    }
+}
+
 
 //你要完成的功能总入口
 void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
@@ -666,9 +718,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     // print_time("deploy_server");
     init();
 
-	// 需要输出的内容
-    // char * topo_file = (char *)"17\n\n0 8 0 20\n21 8 0 20\n9 11 1 13\n21 22 2 20\n23 22 2 8\n1 3 3 11\n24 3 3 17\n27 3 3 26\n24 3 3 10\n18 17 4 11\n1 19 5 26\n1 16 6 15\n15 13 7 13\n4 5 8 18\n2 25 9 15\n0 7 10 10\n23 24 11 23";
-    
     // 读取网络节点参数
     readNetworkNodeInfo(topo, line_num);
     // 读取用户节点信息
@@ -686,19 +735,41 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     }
     printf("LinkItemNum: %d, NetworkNodeNum = %d\n", tmp, i);
     //===========节点信息读入结构体完毕
-    // 找到视频服务器位置：根据最大流量输出来计算
-    int serverID[SERVER_NUM]={-1, };
-    getServerID(serverID, SERVER_NUM);
-//     serverID[0] = 0;
-//     serverID[1] = 1;
-//     serverID[2] = 21;
+    // 找到视频服务器位置
+    // 1. 用户节点相连周围线路流量总和<用户需求为服务器
+    // 2. 最大流量前serverNum名为服务器，服务器直接相连的*0.8->*0.6...
+    int serverNum = 4;
+    int *serverID = (int *)malloc(sizeof(int)*serverNum);
+restart:
+    if(restartFlag){
+        for(int i=0; i<networkNodeNum; i++){
+            clearAllFlow(&networkNode[i]);
+        }
+        free(serverID);
+        serverNum++;
+        serverID = (int *)malloc(sizeof(int)*serverNum);
+        restartFlag = false;
+
+        memset(topo_file, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
+        strcpy(topo_file, "      \n\n");
+        topoFileCurPointer = topo_file + 8;
+        networkPathNum = 0;
+    }
+    getServerID(serverID, serverNum);
     printf("max flow networkNodeID:");
-    for (int i=0; i<SERVER_NUM; i++) {
+    for (int i=0; i<serverNum; i++) {
         printf("%d, ", serverID[i]);
     }
     printf("\n");
     // max flow min cost
-    calcFlowPath(serverID, SERVER_NUM);
+    // calcFlowPath(serverID, serverNum);
+    if(!calcFlowPath(serverID, serverNum)){
+        printf("have no way\n");
+        restartFlag = true;
+        goto restart;
+    } else {
+        printf("congratulation, have an answer!~_~\n");
+    }
     
     
 	// 直接调用输出文件的方法输出到指定文件中(ps请注意格式的正确性，如果有解，第一行只有一个数据；第二行为空；第三行开始才是具体的数据，数据之间用一个空格分隔开)
