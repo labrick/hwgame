@@ -12,9 +12,6 @@ int main(int argc, char *argv[])
     char *topo_file = argv[1];
 
     line_num = read_file(topo, MAX_EDGE_NUM, topo_file);
-    // for (int i=0; i<line_num; i++) {
-    //     printf("line%d: %s", i, topo[i]);
-    // }
 
     printf("line num is :%d \n", line_num);
     if (line_num == 0)

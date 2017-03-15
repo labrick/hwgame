@@ -64,7 +64,6 @@ int read_file(char ** const buff, const unsigned int spec, const char * const fi
         if (line[0] == 0)   continue;
         buff[cnt] = (char *)malloc(MAX_LINE_LEN + 2);
         strncpy(buff[cnt], line, MAX_LINE_LEN + 2 - 1);
-        // printf("line%d: %s", cnt, buff[cnt]);
         buff[cnt][MAX_LINE_LEN + 1] = 0;
         cnt++;
     }
