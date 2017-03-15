@@ -24,6 +24,7 @@ char *topoFileCurPointer = topo_file;
 using namespace std;
 
 typedef struct UserNode{
+    int curUserNodeID;
     int bandwidth;
     int conNetNodeID;
 }UserNode;
@@ -52,7 +53,7 @@ int networkLinkNum = 0;
 int userNodeNum = 0;
 int allCost = 0;
 
-bool restartFlag = false;
+int restartFlag = 0;
 
 int tmp = 0;
 
@@ -64,6 +65,9 @@ void init()
         networkNode[i].curNetworkNodeID = i;
         networkNode[i].nextEdge = NULL;
     }
+    for(int i=0; i<USER_NODE_MAX_NUM; i++){
+        userNode[i].curUserNodeID = i;
+    }
     strcpy(topo_file, "      \n\n");
     topoFileCurPointer = topo_file + 8;
 }
@@ -73,7 +77,7 @@ void bubbleSortUserNode()
 {
     for(int i=0; i<userNodeNum; i++){
         for(int tmpi=i+1; tmpi<userNodeNum; tmpi++){
-            if(userNode[i].bandwidth < userNode[tmpi].bandwidth){
+            if(userNode[i].bandwidth > userNode[tmpi].bandwidth){
                 UserNode tmp = userNode[tmpi];
                 userNode[tmpi] = userNode[i];
                 userNode[i] = tmp;
@@ -121,7 +125,7 @@ void readUserNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
          userNode[atoi(tmpForUserNodeID)].bandwidth = atoi(tmpForBandwidth);
          userNode[atoi(tmpForUserNodeID)].conNetNodeID = atoi(tmpForConNetNodeID);
     }
-    // bubbleSortUserNode();
+    bubbleSortUserNode();
 }
 
 // 建立邻接顶点至邻接列表内
@@ -547,7 +551,8 @@ int getNetworkNodeIDLinkNum(NetworkNodePointer networkNode)
     return networkNodeIDLinkNum;
 }
 
-bool calcFlowPath(int *serverID, int serverNum)
+// return cannot arrive networknode connected to usernode
+int calcFlowPath(int *serverID, int serverNum)
 {
     int *tmpForPreNetworkNodeID, *preNetworkNodeID;    
     printf("==calcFlowPath\n");
@@ -555,7 +560,7 @@ bool calcFlowPath(int *serverID, int serverNum)
     preNetworkNodeID = (int *)malloc(sizeof(int)*networkNodeNum);
     for(int i=0; i<userNodeNum; i++){
         int networkNodeIDStart, networkNodeIDEnd = userNode[i].conNetNodeID;
-        printf("======================================================to userNode[%d]:%d\n", i, networkNodeIDEnd);
+        printf("======================================================to userNode[%d]:%d\n", userNode[i].curUserNodeID, networkNodeIDEnd);
         // 服务器到一个用户节点的计算
         int iterationCount = 0;
         int networkNodeProvider = serverID[0];
@@ -621,7 +626,7 @@ bool calcFlowPath(int *serverID, int serverNum)
             }
             if(noPathcount >= serverNum){
                 printf("ERROR: no server to the userNode[%d]:%d flow:%d  > allFlow:%d\n", i, userNode[i].conNetNodeID, userNode[i].bandwidth, allFlow);
-                return false;
+                return userNode[i].conNetNodeID;
             }
             // printf("previous Node ID:\n");
             // for(int i=0; i<networkNodeNum; i++){
@@ -664,16 +669,16 @@ bool calcFlowPath(int *serverID, int serverNum)
             printf("\n");
 DirectConnect:
             if(directConnectFlag){
-                printf("serverID:%d connect to userNode[%d]:%d directly, and the flow:%d\n", networkNodeProvider, i, userNode[i].conNetNodeID, userNode[i].bandwidth);
+                printf("serverID:%d connect to userNode[%d]:%d directly, and the flow:%d\n", networkNodeProvider, userNode[i].curUserNodeID, userNode[i].conNetNodeID, userNode[i].bandwidth);
                 minFlow = userNode[i].bandwidth;
                 charNum = sprintf(topoFileCurPointer, "%d ", (char)networkNodeProvider);
                 topoFileCurPointer += charNum;
             }
             // 加入用戶Node
-            charNum = sprintf(topoFileCurPointer, "%d ", (char)i);
+            charNum = sprintf(topoFileCurPointer, "%d ", (char)userNode[i].curUserNodeID);
             topoFileCurPointer += charNum;
             // 加入流量值
-            charNum = sprintf(topoFileCurPointer, "%d ", (char)minFlow);
+            charNum = sprintf(topoFileCurPointer, "%d", (char)minFlow);
             topoFileCurPointer += charNum;
             *(topoFileCurPointer++) = '\n';
             printf("\n");
@@ -686,14 +691,14 @@ DirectConnect:
             //     printf("NetworkNode %d: ", i);
             //     printNetworkNodeInfo(&networkNode[i]);
             // }
-            printf("=======%d result:allFlow:%d, userNode[%d].bandwidth:%d\n", iterationCount, allFlow, i,  userNode[i].bandwidth);
+            printf("=======%d result:allFlow:%d, userNode[%d].bandwidth:%d\n", iterationCount, allFlow, userNode[i].curUserNodeID,  userNode[i].bandwidth);
             networkPathNum++;
             printf("--------------------networkPathNum:%d\n", networkPathNum);
             if(directConnectFlag)
                 break;
         }
     }
-    return true;
+    return 0;
 }
 // 清除当前流，重新开始
 void clearAllFlow(NetworkNodePointer networkNode)
@@ -738,16 +743,32 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     // 找到视频服务器位置
     // 1. 用户节点相连周围线路流量总和<用户需求为服务器
     // 2. 最大流量前serverNum名为服务器，服务器直接相连的*0.8->*0.6...
-    int serverNum = 4;
+    int serverNum = 3;
+    int addServerID = 0;
+    int *tmpForServerID = (int *)malloc(sizeof(int)*serverNum);
     int *serverID = (int *)malloc(sizeof(int)*serverNum);
+    // 获取初始的serverNum服务器位置
+    getServerID(serverID, serverNum);
+    printf("max flow networkNodeID:");
+    for (int i=0; i<serverNum; i++) {
+        printf("%d, ", serverID[i]);
+    }
+    printf("\n");
 restart:
     if(restartFlag){
+        printf("restartFlag:%d\n", restartFlag);
+        memcpy(tmpForServerID, serverID, sizeof(int)*serverNum);
         for(int i=0; i<networkNodeNum; i++){
             clearAllFlow(&networkNode[i]);
         }
         free(serverID);
         serverNum++;
         serverID = (int *)malloc(sizeof(int)*serverNum);
+        memcpy(serverID, tmpForServerID, sizeof(int)*serverNum);
+        free(tmpForServerID);
+        tmpForServerID = (int *)malloc(sizeof(int)*serverNum);  // 让备份部分空间也+1
+
+        serverID[serverNum-1] = addServerID;
         restartFlag = false;
 
         memset(topo_file, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
@@ -755,17 +776,16 @@ restart:
         topoFileCurPointer = topo_file + 8;
         networkPathNum = 0;
     }
-    getServerID(serverID, serverNum);
-    printf("max flow networkNodeID:");
+    printf("server location ID:");
     for (int i=0; i<serverNum; i++) {
         printf("%d, ", serverID[i]);
     }
     printf("\n");
     // max flow min cost
-    // calcFlowPath(serverID, serverNum);
-    if(!calcFlowPath(serverID, serverNum)){
-        printf("have no way\n");
-        restartFlag = true;
+    // addServerID = calcFlowPath(serverID, serverNum);
+    if((addServerID = calcFlowPath(serverID, serverNum))){
+        printf("have no way to %d\n", addServerID);
+        restartFlag++;
         goto restart;
     } else {
         printf("congratulation, have an answer!~_~\n");
