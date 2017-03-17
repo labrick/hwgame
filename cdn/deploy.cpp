@@ -604,6 +604,8 @@ bool calcFlowPath(int *serverID, int serverNum)
                     memcpy(preNetworkNodeID, tmpForPreNetworkNodeID, sizeof(int)*networkNodeNum);
                     // printf("select serverID:%d to userNode:%d, minCost:%d\n", serverID[iForServerID], networkNodeIDEnd, minCost);
                 }
+                networkNodeIDSeq.clear();
+                getNetworkIDSeqOnMinDist(preNetworkNodeID, networkNodeProvider, networkNodeIDEnd, networkNodeIDSeq);
                 // printf("previous node:\n");
                 // for(int i=0; i<networkNodeNum; i++){
                 //     printf("%3d\t", i);
