@@ -819,7 +819,6 @@ int addNoPathMethod()
         *(topo_file_master+i) = tmp[i];
     }
     free(tmpForServerID);
-    *(--topoFileCurPointer) = 0;
     return (allCost+300*serverNum);
 }
 
@@ -864,7 +863,6 @@ int maxFlowServerMethod()
     for(int i=0; i<charNum; i++){
         *(topo_file_maxFlow+i) = tmp[i];
     }
-    *(--topoFileCurPointer) = 0;
     return (allCost+300*serverNum);
 }
 //你要完成的功能总入口
