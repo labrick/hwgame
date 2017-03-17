@@ -551,6 +551,29 @@ int getNetworkNodeIDLinkNum(NetworkNodePointer networkNode)
     return networkNodeIDLinkNum;
 }
 
+int getLinkCost(int networkNodeID1, int networkNodeID2)
+{
+    EdgePointer pointer, previous;
+    pointer = networkNode[networkNodeID1].nextEdge;
+    int nextNetworkNodeID = 0;
+    printf("==getLinkCost:NodeID1:%d, NodeID2:%d\n", networkNodeID1, networkNodeID2);
+    while(pointer != NULL){
+        previous = pointer;
+        if ( networkNodeID1 == pointer->networkNodeID1) {
+            nextNetworkNodeID = pointer->networkNodeID2;
+            pointer = pointer->edge1;
+        } else {
+            nextNetworkNodeID = pointer->networkNodeID1;
+            pointer = pointer->edge2;
+        }
+        if(nextNetworkNodeID == networkNodeID2){
+            printf("costPerGB between %d-%d:%d\n", networkNodeID1, networkNodeID2, previous->costPerGB);
+            return previous->costPerGB;
+        }
+    }
+    return -1;
+}
+
 // return cannot arrive networknode connected to usernode
 int calcFlowPath(int *serverID, int serverNum)
 {
@@ -609,6 +632,8 @@ int calcFlowPath(int *serverID, int serverNum)
                     memcpy(preNetworkNodeID, tmpForPreNetworkNodeID, sizeof(int)*networkNodeNum);
                     // printf("select serverID:%d to userNode:%d, minCost:%d\n", serverID[iForServerID], networkNodeIDEnd, minCost);
                 }
+                networkNodeIDSeq.clear();
+                getNetworkIDSeqOnMinDist(tmpForPreNetworkNodeID, networkNodeIDStart, networkNodeIDEnd, networkNodeIDSeq);
                 // printf("previous node:\n");
                 // for(int i=0; i<networkNodeNum; i++){
                 //     printf("%3d\t", i);
@@ -650,6 +675,7 @@ int calcFlowPath(int *serverID, int serverNum)
             } else {
                 allFlow += minFlow;
             }
+            printf("allCost:%d + addCost:%d = %d", allCost, minCost*minFlow, allCost+minCost*minFlow);
             // 根据最小流更新路径上的当前流量值
             updateFlow(networkNodeIDSeq, minFlow);
 
@@ -666,13 +692,17 @@ int calcFlowPath(int *serverID, int serverNum)
                 // }
                 // printf("\n");
             }
+            allCost += minCost*minFlow;
             printf("\n");
+            // 计算租用费用
 DirectConnect:
             if(directConnectFlag){
                 printf("serverID:%d connect to userNode[%d]:%d directly, and the flow:%d\n", networkNodeProvider, userNode[i].curUserNodeID, userNode[i].conNetNodeID, userNode[i].bandwidth);
                 minFlow = userNode[i].bandwidth;
                 charNum = sprintf(topoFileCurPointer, "%d ", (char)networkNodeProvider);
                 topoFileCurPointer += charNum;
+
+                minCost = 0;
             }
             // 加入用戶Node
             charNum = sprintf(topoFileCurPointer, "%d ", (char)userNode[i].curUserNodeID);
@@ -698,6 +728,7 @@ DirectConnect:
                 break;
         }
     }
+    *(--topoFileCurPointer) = 0;
     return 0;
 }
 // 清除当前流，重新开始
@@ -754,6 +785,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         printf("%d, ", serverID[i]);
     }
     printf("\n");
+    // 遗传算法进化
+    
 restart:
     if(restartFlag){
         printf("restartFlag:%d\n", restartFlag);
@@ -775,6 +808,7 @@ restart:
         strcpy(topo_file, "      \n\n");
         topoFileCurPointer = topo_file + 8;
         networkPathNum = 0;
+        allCost = 0;
     }
     printf("server location ID:");
     for (int i=0; i<serverNum; i++) {
@@ -789,6 +823,11 @@ restart:
         goto restart;
     } else {
         printf("congratulation, have an answer!~_~\n");
+        printf("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
+        printf("and serverID:");
+        for(int i=0; i<serverNum; i++){
+            printf("%d\t", serverID[i]);
+        }
     }
     
     
