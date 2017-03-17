@@ -647,6 +647,7 @@ bool calcFlowPath(int *serverID, int serverNum)
             } else {
                 allFlow += minFlow;
             }
+            printf("allCost:%d + addCost:%d = %d", allCost, minCost*minFlow, allCost+minCost*minFlow);
             // 根据最小流更新路径上的当前流量值
             updateFlow(networkNodeIDSeq, minFlow);
 
@@ -663,13 +664,17 @@ bool calcFlowPath(int *serverID, int serverNum)
                 // }
                 // printf("\n");
             }
+            allCost += minCost*minFlow;
             printf("\n");
+            // 计算租用费用
 DirectConnect:
             if(directConnectFlag){
                 printf("serverID:%d connect to userNode[%d]:%d directly, and the flow:%d\n", networkNodeProvider, i, userNode[i].conNetNodeID, userNode[i].bandwidth);
                 minFlow = userNode[i].bandwidth;
                 charNum = sprintf(topoFileCurPointer, "%d ", (char)networkNodeProvider);
                 topoFileCurPointer += charNum;
+
+                minCost = 0;
             }
             // 加入用戶Node
             charNum = sprintf(topoFileCurPointer, "%d ", (char)i);
@@ -695,6 +700,7 @@ DirectConnect:
                 break;
         }
     }
+    *(--topoFileCurPointer) = 0;
     return true;
 }
 // 清除当前流，重新开始
@@ -742,6 +748,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     // 2. 最大流量前serverNum名为服务器，服务器直接相连的*0.8->*0.6...
     int serverNum = 4;
     int *serverID = (int *)malloc(sizeof(int)*serverNum);
+    // 遗传算法进化
 restart:
     if(restartFlag){
         for(int i=0; i<networkNodeNum; i++){
@@ -756,6 +763,7 @@ restart:
         strcpy(topo_file, "      \n\n");
         topoFileCurPointer = topo_file + 8;
         networkPathNum = 0;
+        allCost = 0;
     }
     getServerID(serverID, serverNum);
     printf("max flow networkNodeID:");
@@ -771,6 +779,11 @@ restart:
         goto restart;
     } else {
         printf("congratulation, have an answer!~_~\n");
+        printf("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
+        printf("and serverID:");
+        for(int i=0; i<serverNum; i++){
+            printf("%d\t", serverID[i]);
+        }
     }
     
     
