@@ -26,6 +26,8 @@
 
 #define MAXINT 65536
 
+#define FILTER_COEFFICIENT 1.5
+
 timeb startTime, curTime;
 
 // 网络路径数量
@@ -100,6 +102,8 @@ void bubbleSortUserNode()
 
 void readUserNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
 {    
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     int i=4;
     while (strlen(topo[i++]) > 2);
     PRINT("readUserNodeInfo==================\n");
@@ -200,6 +204,8 @@ void printNetworkNodeInfo(NetworkNodePointer networkNode)
 void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
 {
     PRINT("readNetworkNodeInfo==================\n");
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     for (int i=4; strlen(topo[i]) > 2; i++){
         // PRINT("----------------line%d: %s", i+1, topo[i]);
         char tmpForNetworkIDStart[5] = {0,};
@@ -400,6 +406,8 @@ int dijkstra(int networkNodeIDStart,int networkNodeIDEnd, int *preNetworkNodeID)
             distToStart[nextNetworkNodeID] = previous->costPerGB;
         }
         preNetworkNodeID[nextNetworkNodeID] = networkNodeIDStart;
+        if(nextNetworkNodeID == networkNodeIDEnd)       // 找到就停止，速度又快了一倍
+            return distToStart[networkNodeIDEnd];
         // PRINT("---the previous node of node%d is %d\n", nextNetworkNodeID, networkNodeIDStart); 
         // PRINT("the costPerGB to node:%d is %d\n", nextNetworkNodeID, previous->costPerGB); 
     }
@@ -464,6 +472,9 @@ int dijkstra(int networkNodeIDStart,int networkNodeIDEnd, int *preNetworkNodeID)
             //     PRINT("W(%d)=%d > W(%d):%d+thisDist:%d=%d on %d, no need update\n", nextNetworkNodeID, distToStart[nextNetworkNodeID], minDisNetworkID, distToStart[minDisNetworkID], previous->costPerGB, distToStart[minDisNetworkID]+previous->costPerGB, minDisNetworkID);
             // 
             // }
+            if(nextNetworkNodeID == networkNodeIDEnd){       // 找到就停止，速度又快了一倍
+                return distToStart[networkNodeIDEnd];
+            }
         }
     }
     return distToStart[networkNodeIDEnd];
@@ -878,12 +889,12 @@ int maxFlowServerMethod()
 
 #define CROSSOVER_PROBABILITY 0.4
 #define VARIATION_PROBABILITY 0.1
-#define ITERATION_NUM 10
+#define ITERATION_NUM 2
 int chromosomeAllNum;
 int chromoKeepNum;
 int geneNumPerChromo;
 typedef struct Chromosome{
-    char *geneSeq;
+    bool *geneSeq;      // bool类型比char类型快了10ms左右
     int cost;
     double probability_up;
     double probability_down;
@@ -891,21 +902,33 @@ typedef struct Chromosome{
 Chromosome chromosome[(int)(NETWORK_NODE_MAX_NUM * (CROSSOVER_PROBABILITY + VARIATION_PROBABILITY))];
 void initialize()
 {
-
     chromosomeAllNum = networkNodeNum + (int)networkNodeNum*CROSSOVER_PROBABILITY*2 + (int)networkNodeNum*VARIATION_PROBABILITY;
     chromoKeepNum = networkNodeNum;
     geneNumPerChromo = networkNodeNum;
 
-    PRINT("==ga_initalize, chromosomeAllNum:%d, chromoKeepNum:%d, geneNumPerChromo:%d\n", chromosomeAllNum, chromoKeepNum, geneNumPerChromo);
+    printf("==ga_initalize, chromosomeAllNum:%d, chromoKeepNum:%d, geneNumPerChromo:%d\n", chromosomeAllNum, chromoKeepNum, geneNumPerChromo);
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     srand(time(0));
     for(int i=0; i<chromosomeAllNum; i++){
-        char *geneSeq = (char *)malloc(sizeof(char)*geneNumPerChromo);
+        bool *geneSeq = (bool *)malloc(sizeof(bool)*geneNumPerChromo);
         if( geneSeq != NULL){
-            for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-                geneSeq[tmpi] = rand()%2;
-                // PRINT("%d\t", geneSeq[tmpi]);
+            // 这种方法比下面的方法快了一倍
+            memset(geneSeq, 0, sizeof(bool)*geneNumPerChromo);
+            for(int tmpi=0; tmpi<userNodeNum*FILTER_COEFFICIENT; tmpi++){
+                geneSeq[rand()%geneNumPerChromo] = rand()%2;
             }
-            // PRINT("\n");
+            // int bit1Count = 0;
+            // do{
+            //     bit1Count = 0;
+            //     for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
+            //         geneSeq[tmpi] = rand()%2;
+            //         if(geneSeq[tmpi])
+            //             bit1Count++;
+            //         printf("%d\t", geneSeq[tmpi]);
+            //     }
+            //     printf("\n");
+            // }while(bit1Count > userNodeNum);
         }
         ChromosomePointer newChromo = (ChromosomePointer)malloc(sizeof(Chromesome));
         if(newChromo != NULL){
@@ -944,7 +967,9 @@ void bubbleChromo()
 bool culProbability = true;
 void fitness()
 {
-    PRINT("==ga_fitness\n");
+    printf("==ga_fitness\n");
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     int serverID[NETWORK_NODE_MAX_NUM];
     int serverNum = 0;
     for(int i=0; i<chromosomeAllNum; i++){
@@ -956,7 +981,10 @@ void fitness()
                 serverID[serverNum++] = tmpi;
             }
         }
-        if(NOT_NETWORK_NODE_ID == calcFlowPath(serverID, serverNum)){
+        // userNodeNum*的系数不好说是多少
+        if(serverNum > userNodeNum*FILTER_COEFFICIENT){
+            chromosome[i].cost = MAXINT-1;
+        } else if(NOT_NETWORK_NODE_ID == calcFlowPath(serverID, serverNum)){
             chromosome[i].cost = allCost+300*serverNum;
         } else {
             chromosome[i].cost = MAXINT;
@@ -1012,7 +1040,9 @@ int runnerGambleGetChromo()
 #define MUTATION_BIT_NUM 2
 void crossover()
 {
-    PRINT("==ga_crossover\n");
+    printf("==ga_crossover\n");
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     int chromosomeIndex1, chromosomeIndex2;
     int crossoverIndex = 0;
     int crossoverChildStartIndex = chromoKeepNum;
@@ -1029,11 +1059,11 @@ void crossover()
         //     PRINT("%d\t", (int)chromosome[chromosomeIndex1].geneSeq[tmpi]);
         // }
         // PRINT("\n");
-        memcpy(chromosome[crossoverChildStartIndex+i*2].geneSeq, chromosome[chromosomeIndex1].geneSeq, sizeof(char)*geneNumPerChromo);
-        memcpy(chromosome[crossoverChildStartIndex+i*2+1].geneSeq, chromosome[chromosomeIndex2].geneSeq, sizeof(char)*geneNumPerChromo);
+        memcpy(chromosome[crossoverChildStartIndex+i*2].geneSeq, chromosome[chromosomeIndex1].geneSeq, sizeof(bool)*geneNumPerChromo);
+        memcpy(chromosome[crossoverChildStartIndex+i*2+1].geneSeq, chromosome[chromosomeIndex2].geneSeq, sizeof(bool)*geneNumPerChromo);
         for(int tmpi=0; tmpi<MUTATION_BIT_NUM; tmpi++){
             crossoverIndex = rand() % geneNumPerChromo;
-            char tmp = chromosome[crossoverChildStartIndex+i*2].geneSeq[crossoverIndex];
+            bool tmp = chromosome[crossoverChildStartIndex+i*2].geneSeq[crossoverIndex];
             chromosome[crossoverChildStartIndex+i*2].geneSeq[crossoverIndex] = chromosome[crossoverChildStartIndex+i*2+1].geneSeq[crossoverIndex];
             chromosome[crossoverChildStartIndex+i*2+1].geneSeq[crossoverIndex] = tmp;
         }
@@ -1042,13 +1072,15 @@ void crossover()
 
 void mutation()
 {
-    PRINT("==ga_mutation\n");
+    printf("==ga_mutation\n");
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     int mutationNum = (int)chromoKeepNum * VARIATION_PROBABILITY;   //计算变异的染色体数目
     int mutationChildStartIndex =  chromoKeepNum +  chromoKeepNum*CROSSOVER_PROBABILITY;
     for(int i = 0; i < mutationNum; i ++) {   
         int mutationChromoID = rand() % chromoKeepNum;                    //计算哪条染色体发生变异
         int mutationGenePlace = rand() % geneNumPerChromo;          //计算发生变异的染色体上需要变异的基因位点
-        char flag = chromosome[mutationChromoID].geneSeq[mutationGenePlace];  //对相应的基因位点进行变异
+        bool flag = chromosome[mutationChromoID].geneSeq[mutationGenePlace];  //对相应的基因位点进行变异
         memcpy(chromosome[mutationChildStartIndex+i].geneSeq, chromosome[mutationChromoID].geneSeq, sizeof(bool)*geneNumPerChromo);
         if(flag)
             chromosome[mutationChildStartIndex+i].geneSeq[mutationGenePlace] = 0;
@@ -1059,15 +1091,17 @@ void mutation()
 
 void ga()
 {
-    PRINT("==ga()\n");
+    printf("==ga()\n");
+    ftime(&curTime);
+    printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     initialize();
-    // for(int i=0; i<ITERATION_NUM; i++){
-    while(1){
+    for(int i=0; i<ITERATION_NUM; i++){
+    // while(1){
         fitness();
         crossover();
         mutation();
         ftime(&curTime);
-        if(curTime.time - startTime.time > 80){
+        if((curTime.time-startTime.time)*1000 + (curTime.millitm-startTime.millitm) > 75*1000){
             break;
         }
     }
@@ -1117,20 +1151,20 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         }
     }
     if(NOT_NETWORK_NODE_ID == calcFlowPath(serverID, serverNum)){
-        PRINT("congratulation, have an answer!~_~\n");
-        PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
-        PRINT("and serverID:");
+        printf("\ncongratulation, have an answer!~_~\n");
+        printf("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
+        printf("and serverID:");
         for(int i=0; i<serverNum; i++){
-            PRINT("%d\t", serverID[i]);
+            printf("%d\t", serverID[i]);
         }
-        PRINT("\n");
+        printf("\n");
         char tmp[6];
         int charNum = sprintf(tmp, "%d", networkPathNum);
         for(int i=0; i<charNum; i++){
             *(topo_file_master+i) = tmp[i];
         }
     } else {
-        PRINT("ERROR: you are failed\n");
+        printf("ERROR: you are failed\n");
     }
     topoFileCurPointer = topo_file_master;
     
@@ -1156,6 +1190,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     //     PRINT("select master\n");
     //     topoFileCurPointer = topo_file_master;
     // }
+    ftime(&curTime);
+    printf("END you have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     
 	// 直接调用输出文件的方法输出到指定文件中(ps请注意格式的正确性，如果有解，第一行只有一个数据；第二行为空；第三行开始才是具体的数据，数据之间用一个空格分隔开)
 	write_result((const char *)topoFileCurPointer, filename);
