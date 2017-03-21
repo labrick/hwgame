@@ -34,9 +34,8 @@ timeb startTime, curTime;
 
 // 网络路径数量
 int networkPathNum = 0;
-char topo_file_master[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH*3]; 
-char topo_file_maxFlow[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH*3]; 
-char *topoFileCurPointer = topo_file_master;
+char topo_file[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH*3]; 
+char *topoFileCurPointer = topo_file;
 
 using namespace std;
 
@@ -84,9 +83,8 @@ void init()
     for(int i=0; i<USER_NODE_MAX_NUM; i++){
         userNode[i].curUserNodeID = i;
     }
-    strcpy(topo_file_master, "      \n\n");
-    strcpy(topo_file_maxFlow, "      \n\n");
-    topoFileCurPointer = topo_file_master + 8;
+    strcpy(topo_file, "      \n\n");
+    topoFileCurPointer = topo_file + 8;
 }
 
 // 用户需求量的大的排在前面以便优先处理
@@ -660,9 +658,9 @@ void initForRestart()
     }
     networkPathNum = 0;
     allCost = 0;
-    memset(topo_file_master, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
-    strcpy(topo_file_master, "      \n\n");
-    topoFileCurPointer = topo_file_master + 8;
+    memset(topo_file, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
+    strcpy(topo_file, "      \n\n");
+    topoFileCurPointer = topo_file + 8;
 }
 
 //zhengyang
@@ -942,12 +940,12 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         char tmp[6];
         int charNum = sprintf(tmp, "%d", networkPathNum);
         for(int i=0; i<charNum; i++){
-            *(topo_file_master+i) = tmp[i];
+            *(topo_file+i) = tmp[i];
         }
     } else {
         printf("ERROR: you are failed\n");
     }
-    topoFileCurPointer = topo_file_master;
+    topoFileCurPointer = topo_file;
     
     ftime(&curTime);
     printf("END you have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
