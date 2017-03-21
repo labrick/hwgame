@@ -265,24 +265,6 @@ void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
     }
 }
 
-typedef struct ServerInfo{
-    int serverID;
-    int serverFlow;
-    int weigth;
-}ServerInfo, *ServerInfoPointer;
-void bubbleSort(ServerInfoPointer serverInfoPointer, int memNum)
-{
-    for(int i=0; i<memNum; i++){
-        for(int tmpi=i+1; tmpi<memNum; tmpi++){
-            if(serverInfoPointer[i].serverFlow*serverInfoPointer[i].weigth < serverInfoPointer[tmpi].serverFlow*serverInfoPointer[tmpi].weigth){
-                ServerInfo tmp = serverInfoPointer[tmpi];
-                serverInfoPointer[tmpi] = serverInfoPointer[i];
-                serverInfoPointer[i] = tmp;
-            }
-        }
-    }
-}
-
 bool isDirectConnect(int networkNodeID1, int networkNodeID2)
 {    
     EdgePointer pointer;
@@ -302,74 +284,6 @@ bool isDirectConnect(int networkNodeID1, int networkNodeID2)
         }
     }
     return false;
-}
-
-void getServerID(int *serverID, int serverNum)
-{
-    vector<int> mustServerID, mustServerAllFlow;
-    ServerInfo serverInfo[NETWORK_NODE_MAX_NUM];        // 为啥这里不能是数组指针
-    int count = 0;
-    PRINT("=====================getServerID\n");
-    for(int i=0; i<NETWORK_NODE_MAX_NUM; i++){
-        if (networkNode[i].nextEdge == NULL) {
-            PRINT("Traversal over\n");
-            break;
-        } else {
-            EdgePointer pointer = networkNode[i].nextEdge;
-            int tmpForAllFlow = 0;
-            while( pointer != NULL) {
-                // PRINT("networkNode[%d]: %d + %d = %d\n", i, tmpForAllFlow, pointer->bandwidth, tmpForAllFlow + pointer->bandwidth);
-                tmpForAllFlow += pointer->bandwidth;
-                if ( networkNode[i].curNetworkNodeID == pointer->networkNodeID1) {
-                    pointer = pointer->edge1;
-                } else {
-                    pointer = pointer->edge2;
-                }
-            }
-            // 判断必选服务器
-            // PRINT("networkNode[%d] flow is: %d\n", i, tmpForAllFlow);
-            for(int tmpi=0; tmpi<userNodeNum; tmpi++){
-                if((networkNode[i].curNetworkNodeID == userNode[i].conNetNodeID) && \
-                        (tmpForAllFlow <= userNode[i].bandwidth)){
-                    mustServerID.push_back(userNode[i].conNetNodeID);
-                    mustServerAllFlow.push_back(tmpForAllFlow);
-                }
-            }
-            ServerInfoPointer newServerInfo = (ServerInfoPointer)malloc(sizeof(ServerInfo)*networkNodeNum);
-            if(newServerInfo != NULL){
-                newServerInfo->serverID = networkNode[i].curNetworkNodeID;
-                newServerInfo->serverFlow = tmpForAllFlow;
-                newServerInfo->weigth = 100;
-                serverInfo[count++] = *newServerInfo;
-            }
-        }   
-        
-    }
-    bubbleSort(serverInfo, networkNodeNum);
-    for(int i=0; i<serverNum; i++){
-        if(serverInfo[i].weigth == 100){
-            serverID[i] = serverInfo[i].serverID;
-            serverInfo[i].weigth *= 0.8;
-        }
-        for(int tmpi=i; tmpi<networkNodeNum; tmpi++){
-            if((serverInfo[tmpi].weigth == 100) && 
-                    isDirectConnect(i, serverInfo[tmpi].serverID)){
-                serverInfo[tmpi].weigth *= 0.8;
-            }
-        }
-        bubbleSort(serverInfo, networkNodeNum);
-    }
-    for(int i=0; i<networkNodeNum; i++){
-        PRINT("ID:%d, flow:%d, flow:%d*weight:%d=%d\n", serverInfo[i].serverID, serverInfo[i].serverFlow, serverInfo[i].serverFlow, serverInfo[i].weigth, serverInfo[i].serverFlow*serverInfo[i].weigth);
-    }
-    for(int i=0; i<(int)mustServerID.size(); i++){
-        PRINT("serverID:%d is mustServerID\n", mustServerID[mustServerID.size()-1]);
-        serverID[serverNum-i] = mustServerID[mustServerID.size()-1];
-    }
-    for(int i=0; i<serverNum; i++){
-        PRINT("serverID:%d\tmaxFlow:%d\n", serverInfo[i].serverID, serverInfo[i].serverFlow);
-        serverID[i] = serverInfo[i].serverID;
-    }
 }
 
 #define MAX_8BIT 128  // 最大值100
@@ -558,48 +472,6 @@ void updateFlow(vector<int> &networkNodeIDSeq, int minFlow)
         }
     }
 
-}
-
-int getNetworkNodeIDLinkNum(NetworkNodePointer networkNode)
-{
-    EdgePointer pointer;
-    pointer = networkNode->nextEdge;
-    int networkNodeIDLinkNum = 0;
-    PRINT("==getNetworkNodeIDLinkNum\n");
-    while (pointer != NULL) {
-        networkNodeIDLinkNum++;
-        if ( networkNode->curNetworkNodeID == pointer->networkNodeID1) {
-            pointer = pointer->edge1;
-        } else {
-            pointer = pointer->edge2;
-        }
-        // 如果在这里采用pointer访问数据，则可能此时pointer为空，所以会有segment core问题
-    }
-    PRINT("networkNode:%d, LinkNum:%d", networkNode->curNetworkNodeID, networkNodeIDLinkNum);
-    return networkNodeIDLinkNum;
-}
-
-int getLinkCost(int networkNodeID1, int networkNodeID2)
-{
-    EdgePointer pointer, previous;
-    pointer = networkNode[networkNodeID1].nextEdge;
-    int nextNetworkNodeID = 0;
-    PRINT("==getLinkCost:NodeID1:%d, NodeID2:%d\n", networkNodeID1, networkNodeID2);
-    while(pointer != NULL){
-        previous = pointer;
-        if ( networkNodeID1 == pointer->networkNodeID1) {
-            nextNetworkNodeID = pointer->networkNodeID2;
-            pointer = pointer->edge1;
-        } else {
-            nextNetworkNodeID = pointer->networkNodeID1;
-            pointer = pointer->edge2;
-        }
-        if(nextNetworkNodeID == networkNodeID2){
-            PRINT("costPerGB between %d-%d:%d\n", networkNodeID1, networkNodeID2, previous->costPerGB);
-            return previous->costPerGB;
-        }
-    }
-    return -1;
 }
 
 // return cannot arrive networknode connected to usernode
@@ -791,110 +663,6 @@ void initForRestart()
     memset(topo_file_master, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
     strcpy(topo_file_master, "      \n\n");
     topoFileCurPointer = topo_file_master + 8;
-}
-
-int addNoPathMethod()
-{
-    // 找到视频服务器位置
-    // 1. 用户节点相连周围线路流量总和<用户需求为服务器
-    // 2. 最大流量前serverNum名为服务器，服务器直接相连的*0.8->*0.6...
-    int serverNum = 3;
-    int *serverID = (int *)malloc(sizeof(int)*serverNum);
-    // 获取初始的serverNum服务器位置
-    getServerID(serverID, serverNum);
-    PRINT("max flow networkNodeID:");
-    for (int i=0; i<serverNum; i++) {
-        PRINT("%d, ", serverID[i]);
-    }
-    PRINT("\n");
-    int addServerID = -1;
-    int *tmpForServerID = (int *)malloc(sizeof(int)*serverNum);
-    do{
-        if(addServerID != NOT_NETWORK_NODE_ID){
-            PRINT("have no way to %d, add it to serverID\n", addServerID);
-            memcpy(tmpForServerID, serverID, sizeof(int)*serverNum);
-            initForRestart();
-            free(serverID);
-            serverNum++;
-            serverID = (int *)malloc(sizeof(int)*serverNum);
-            memcpy(serverID, tmpForServerID, sizeof(int)*serverNum);
-            free(tmpForServerID);
-            tmpForServerID = (int *)malloc(sizeof(int)*serverNum);  // 让备份部分空间也+1
-
-            serverID[serverNum-1] = addServerID;
-
-            memset(topo_file_master, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
-            strcpy(topo_file_master, "      \n\n");
-            topoFileCurPointer = topo_file_master + 8;
-        }
-
-        PRINT("server location ID:");
-        for (int i=0; i<serverNum; i++) {
-            PRINT("%d, ", serverID[i]);
-        }
-        PRINT("\n");
-        // max flow min cost
-        // addServerID = calcFlowPath(serverID, serverNum);
-    }while(NOT_NETWORK_NODE_ID != (addServerID = calcFlowPath(serverID, serverNum)));
-
-    PRINT("congratulation, have an answer!~_~\n");
-    PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+costPerServer*serverNum);
-    PRINT("and serverID:");
-    for(int i=0; i<serverNum; i++){
-        PRINT("%d\t", serverID[i]);
-    }
-    PRINT("\n");
-    char tmp[6];
-    int charNum = sprintf(tmp, "%d", networkPathNum);
-    for(int i=0; i<charNum; i++){
-        *(topo_file_master+i) = tmp[i];
-    }
-    free(tmpForServerID);
-    return (allCost+costPerServer*serverNum);
-}
-
-int maxFlowServerMethod()
-{  
-    int noPathServerID = 0;
-    // 找到视频服务器位置
-    // 1. 用户节点相连周围线路流量总和<用户需求为服务器
-    // 2. 最大流量前serverNum名为服务器，服务器直接相连的*0.8->*0.6...
-    int serverNum = 3;
-    int *serverID = (int *)malloc(sizeof(int)*serverNum);
-    topoFileCurPointer = topo_file_maxFlow;
-    do{
-        if(noPathServerID != 0){
-            PRINT("have no way to %d, research serverID\n", noPathServerID);
-            initForRestart();
-            free(serverID);
-            serverNum++;
-            serverID = (int *)malloc(sizeof(int)*serverNum);
-
-            memset(topo_file_maxFlow, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
-            strcpy(topo_file_maxFlow, "      \n\n");
-            topoFileCurPointer = topo_file_maxFlow + 8;
-        }
-        getServerID(serverID, serverNum);
-        PRINT("max flow networkNodeID:");
-        for (int i=0; i<serverNum; i++) {
-            PRINT("%d, ", serverID[i]);
-        }
-        PRINT("\n");
-    }while(NOT_NETWORK_NODE_ID != (noPathServerID = calcFlowPath(serverID, serverNum)));
-
-    PRINT("congratulation, have an answer!~_~\n");
-    PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+costPerServer*serverNum);
-    PRINT("and serverID:");
-    for(int i=0; i<serverNum; i++){
-        PRINT("%d\t", serverID[i]);
-    }
-    PRINT("\n");
-    char tmp[6];
-    int charNum = sprintf(tmp, "%d", networkPathNum);
-    for(int i=0; i<charNum; i++){
-        *(topo_file_maxFlow+i) = tmp[i];
-    }
-    return (allCost+costPerServer*serverNum);
 }
 
 //zhengyang
@@ -1181,28 +949,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     }
     topoFileCurPointer = topo_file_master;
     
-    // // 第一种方法：采用过不去就是服务器master
-    // int firstMethodCost = 100000;
-    // initForRestart();
-    // firstMethodCost = addNoPathMethod();
-    // // 第二种方法：采用支持流量最大为服务器maxFlow
-    // int secondMethodCost = 10000;
-    // initForRestart();
-    // secondMethodCost = maxFlowServerMethod();
-    // // PRINT("max flow networkNodeID:");
-    // // for (int i=0; i<serverNum; i++) {
-    // //     PRINT("%d, ", serverID[i]);
-    // // }
-    // // PRINT("\n");
-
-    // PRINT("firstMethodCost:%d, secondMethodCost:%d\n", firstMethodCost, secondMethodCost);
-    // if( firstMethodCost > secondMethodCost){
-    //     PRINT("select maxFlow\n");
-    //     topoFileCurPointer = topo_file_maxFlow;
-    // } else {
-    //     PRINT("select master\n");
-    //     topoFileCurPointer = topo_file_master;
-    // }
     ftime(&curTime);
     printf("END you have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     
