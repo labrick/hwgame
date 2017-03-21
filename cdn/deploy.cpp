@@ -7,7 +7,7 @@
 #include <sys/timeb.h>
 // #define _DEBUG
 //
-#undef _DEBUG
+// #undef _DEBUG
 
 #ifdef _DEBUG
     #define PRINT printf
@@ -19,6 +19,7 @@
 #define NETWORK_NODE_MAX_NUM 1000
 #define MAX_LINK_NUM_PER_NODE 20
 
+// 答案限制条件
 #define NETWORK_PATH_MAX_NUM 50000
 #define NETWORK_MAX_NUM_PER_PATH 1000
 
@@ -28,12 +29,13 @@
 
 #define FILTER_COEFFICIENT 1.5
 
+
 timeb startTime, curTime;
 
 // 网络路径数量
 int networkPathNum = 0;
-char topo_file_master[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH]; 
-char topo_file_maxFlow[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH]; 
+char topo_file_master[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH*3]; 
+char topo_file_maxFlow[NETWORK_PATH_MAX_NUM*NETWORK_MAX_NUM_PER_PATH*3]; 
 char *topoFileCurPointer = topo_file_master;
 
 using namespace std;
@@ -66,6 +68,7 @@ NetworkNode networkNode[NETWORK_NODE_MAX_NUM];
 int networkNodeNum = 0;
 int networkLinkNum = 0;
 int userNodeNum = 0;
+int costPerServer = 0;
 int allCost = 0;
 
 int tmp = 0;
@@ -259,9 +262,7 @@ void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
             createMLGraph(atoi(tmpForNetworkIDEnd), newEdge);
             networkLinkNum++;
         }
-        
     }
-
 }
 
 typedef struct ServerInfo{
@@ -605,6 +606,7 @@ int getLinkCost(int networkNodeID1, int networkNodeID2)
 int calcFlowPath(int *serverID, int serverNum)
 {
     int *tmpForPreNetworkNodeID, *preNetworkNodeID;    
+    int iterationCount = 0;
     PRINT("==calcFlowPath\n");
     tmpForPreNetworkNodeID = (int *)malloc(sizeof(int)*networkNodeNum);
     preNetworkNodeID = (int *)malloc(sizeof(int)*networkNodeNum);
@@ -612,7 +614,6 @@ int calcFlowPath(int *serverID, int serverNum)
         int networkNodeIDStart, networkNodeIDEnd = userNode[i].conNetNodeID;
         PRINT("======================================================to userNode[%d]:%d\n", userNode[i].curUserNodeID, networkNodeIDEnd);
         // 服务器到一个用户节点的计算
-        int iterationCount = 0;
         int networkNodeProvider = serverID[0];
         int minFlow, allFlow = 0; 
         bool directConnectFlag = false;
@@ -625,6 +626,9 @@ int calcFlowPath(int *serverID, int serverNum)
             int searchServerCount = 0, noPathcount = 0;;
             int charNum;
             iterationCount++;
+            // if(iterationCount > NETWORK_PATH_MAX_NUM){
+            //     return MAXINT;
+            // }
             memset(preNetworkNodeID, -1, sizeof(int)*networkNodeNum);
             for(int iForServerID=0; iForServerID<serverNum; iForServerID++){
                 int tmpForMinCost = MAXINT;
@@ -709,10 +713,13 @@ int calcFlowPath(int *serverID, int serverNum)
             PRINT("the %d-%d min flow: %d\n", networkNodeProvider, networkNodeIDEnd, minFlow);
             PRINT("select %d-%d seq:", networkNodeProvider, networkNodeIDEnd);
             // 将关注点写入内存缓冲区
+            // if((int)networkNodeIDSeq.size() > NETWORK_MAX_NUM_PER_PATH){
+            //     return MAXINT;
+            // }
             for(int i=0; i<(int)networkNodeIDSeq.size(); i++){
                 PRINT("%d\t",networkNodeIDSeq[networkNodeIDSeq.size()-1-i]);
                 // itoa(networkNodeIDSeq[networkNodeIDSeq.size()-1-i], topoFileCurPointer, 10);
-                charNum = sprintf(topoFileCurPointer, "%d ", (char)networkNodeIDSeq[networkNodeIDSeq.size()-1-i]);
+                charNum = sprintf(topoFileCurPointer, "%d ", networkNodeIDSeq[networkNodeIDSeq.size()-1-i]);
                 topoFileCurPointer += charNum;
                 // for(int i=0; i<10; i++){
                 //     PRINT("%c", topo_file[i]);
@@ -726,16 +733,16 @@ DirectConnect:
             if(directConnectFlag){
                 PRINT("serverID:%d connect to userNode[%d]:%d directly, and the flow:%d\n", networkNodeProvider, userNode[i].curUserNodeID, userNode[i].conNetNodeID, userNode[i].bandwidth);
                 minFlow = userNode[i].bandwidth;
-                charNum = sprintf(topoFileCurPointer, "%d ", (char)networkNodeProvider);
+                charNum = sprintf(topoFileCurPointer, "%d ", networkNodeProvider);
                 topoFileCurPointer += charNum;
 
                 minCost = 0;
             }
             // 加入用戶Node
-            charNum = sprintf(topoFileCurPointer, "%d ", (char)userNode[i].curUserNodeID);
+            charNum = sprintf(topoFileCurPointer, "%d ", userNode[i].curUserNodeID);
             topoFileCurPointer += charNum;
             // 加入流量值
-            charNum = sprintf(topoFileCurPointer, "%d", (char)minFlow);
+            charNum = sprintf(topoFileCurPointer, "%d", minFlow);
             topoFileCurPointer += charNum;
             *(topoFileCurPointer++) = '\n';
             PRINT("\n");
@@ -781,6 +788,9 @@ void initForRestart()
     }
     networkPathNum = 0;
     allCost = 0;
+    memset(topo_file_master, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
+    strcpy(topo_file_master, "      \n\n");
+    topoFileCurPointer = topo_file_master + 8;
 }
 
 int addNoPathMethod()
@@ -828,7 +838,7 @@ int addNoPathMethod()
     }while(NOT_NETWORK_NODE_ID != (addServerID = calcFlowPath(serverID, serverNum)));
 
     PRINT("congratulation, have an answer!~_~\n");
-    PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
+    PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+costPerServer*serverNum);
     PRINT("and serverID:");
     for(int i=0; i<serverNum; i++){
         PRINT("%d\t", serverID[i]);
@@ -840,7 +850,7 @@ int addNoPathMethod()
         *(topo_file_master+i) = tmp[i];
     }
     free(tmpForServerID);
-    return (allCost+300*serverNum);
+    return (allCost+costPerServer*serverNum);
 }
 
 int maxFlowServerMethod()
@@ -873,7 +883,7 @@ int maxFlowServerMethod()
     }while(NOT_NETWORK_NODE_ID != (noPathServerID = calcFlowPath(serverID, serverNum)));
 
     PRINT("congratulation, have an answer!~_~\n");
-    PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
+    PRINT("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+costPerServer*serverNum);
     PRINT("and serverID:");
     for(int i=0; i<serverNum; i++){
         PRINT("%d\t", serverID[i]);
@@ -884,12 +894,14 @@ int maxFlowServerMethod()
     for(int i=0; i<charNum; i++){
         *(topo_file_maxFlow+i) = tmp[i];
     }
-    return (allCost+300*serverNum);
+    return (allCost+costPerServer*serverNum);
 }
 
-#define CROSSOVER_PROBABILITY 0.4
+//zhengyang
+//#define CROSSOVER_PROBABILITY 0.4
+#define CROSSOVER_PROBABILITY 0.5
 #define VARIATION_PROBABILITY 0.1
-#define ITERATION_NUM 2
+#define ITERATION_NUM 6000
 int chromosomeAllNum;
 int chromoKeepNum;
 int geneNumPerChromo;
@@ -985,7 +997,7 @@ void fitness()
         if(serverNum > userNodeNum*FILTER_COEFFICIENT){
             chromosome[i].cost = MAXINT-1;
         } else if(NOT_NETWORK_NODE_ID == calcFlowPath(serverID, serverNum)){
-            chromosome[i].cost = allCost+300*serverNum;
+            chromosome[i].cost = allCost+costPerServer*serverNum;
         } else {
             chromosome[i].cost = MAXINT;
         }
@@ -1095,8 +1107,8 @@ void ga()
     ftime(&curTime);
     printf("have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
     initialize();
-    for(int i=0; i<ITERATION_NUM; i++){
-    // while(1){
+    // for(int i=0; i<ITERATION_NUM; i++){
+    while(1){
         fitness();
         crossover();
         mutation();
@@ -1118,6 +1130,10 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     ftime(&startTime);
     init();
 
+    // 读取每台服务器的成本数
+    costPerServer = atoi(topo[2]);
+    PRINT("costPerServer:%d\n", costPerServer);
+    
     // 读取网络节点参数
     readNetworkNodeInfo(topo, line_num);
     // 读取用户节点信息
@@ -1142,9 +1158,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
     initForRestart();
 
-    memset(topo_file_master, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
-    strcpy(topo_file_master, "      \n\n");
-    topoFileCurPointer = topo_file_master + 8;
     for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
         if(chromosome[0].geneSeq[tmpi]){
             serverID[serverNum++] = tmpi;
@@ -1152,7 +1165,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     }
     if(NOT_NETWORK_NODE_ID == calcFlowPath(serverID, serverNum)){
         printf("\ncongratulation, have an answer!~_~\n");
-        printf("PathNum:%d, RentCost:%d, ServerNum:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, allCost+300*serverNum);
+        printf("PathNum:%d, RentCost:%d, ServerNum:%d, CostPerServer:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, costPerServer,  allCost+costPerServer*serverNum);
         printf("and serverID:");
         for(int i=0; i<serverNum; i++){
             printf("%d\t", serverID[i]);
