@@ -936,7 +936,7 @@ void mutation()
     int mutationNum = (int)chromoKeepNum * VARIATION_PROBABILITY;   //计算变异的染色体数目
     int mutationChildStartIndex =  chromoKeepNum +  chromoKeepNum*CROSSOVER_PROBABILITY;
     for(int i = 0; i < mutationNum; i ++) {   
-        int mutationChromoID = rand() % chromoKeepNum;                    //计算哪条染色体发生变异
+        int mutationChromoID = runnerGambleGetChromo();                    //计算哪条染色体发生变异
         for(int tmpi=0; tmpi<VARIATION_PROBABILITY_DOWN; tmpi++){
             int mutationGenePlace = rand() % geneNumPerChromo;          //计算发生变异的染色体上需要变异的基因位点
             bool flag = chromosome[mutationChromoID].geneSeq[mutationGenePlace];  //对相应的基因位点进行变异
