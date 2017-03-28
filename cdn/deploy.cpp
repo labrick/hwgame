@@ -61,6 +61,7 @@ typedef struct Edge{
 typedef struct NetworkNode{
     int curNetworkNodeID;
     EdgePointer nextEdge;
+    vector<int> adjoinPoint;//存放邻接点
 }NetworkNode, * NetworkNodePointer;
 NetworkNode networkNode[NETWORK_NODE_MAX_NUM];
 
@@ -281,7 +282,7 @@ void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
         char tmpForNetworkIDEnd[5] = {0,};
         char tmpForBandwidth[5] = {0,};
         char tmpForCostPerGB[5] = {0,};
-
+        
         int tmpi = 0;
         int preNum = tmpi;
         while(*((char *)topo[i]+tmpi) != ' ') {
@@ -314,35 +315,52 @@ void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
         // PRINT("NetworkNodeIDEnd is string:%s, int:%d\n", tmpForNetworkIDEnd, atoi(tmpForNetworkIDEnd));
         // PRINT("Bandwidth is string:%s, int:%d\n", tmpForBandwidth, atoi(tmpForBandwidth));
         // PRINT("CostPerGB is string:%s, int:%d\n", tmpForCostPerGB, atoi(tmpForCostPerGB));
+        
+        //save the adjoin node to vector
+        int tmpSaveNetworkIDStart;//save the start and the end ID networknode
+        int tmpSaveNetworkIDEnd;
+        tmpSaveNetworkIDStart = atoi(tmpForNetworkIDStart);
+        tmpSaveNetworkIDEnd = atoi(tmpForNetworkIDEnd);
+        networkNode[tmpSaveNetworkIDStart].adjoinPoint.push_back(tmpSaveNetworkIDEnd);
+        networkNode[tmpSaveNetworkIDEnd].adjoinPoint.push_back(tmpSaveNetworkIDStart);
+
         // 创捷Edge结构
-        if(isDirectConnect(atoi(tmpForNetworkIDStart), atoi(tmpForNetworkIDEnd), atoi(tmpForBandwidth), atoi(tmpForCostPerGB))){
-            printf("%d - %d repeat edge!\n", atoi(tmpForNetworkIDStart), atoi(tmpForNetworkIDEnd));
-            continue;
-        }
+        // if(isDirectConnect(atoi(tmpForNetworkIDStart), atoi(tmpForNetworkIDEnd), atoi(tmpForBandwidth), atoi(tmpForCostPerGB))){
+        //     printf("%d - %d repeat edge!\n", atoi(tmpForNetworkIDStart), atoi(tmpForNetworkIDEnd));
+        //     continue;
+        // }
         EdgePointer newEdge = (EdgePointer) malloc(sizeof(Edge));
         if (newEdge != NULL) {
-            newEdge->networkNodeID1 = atoi(tmpForNetworkIDStart);
-            newEdge->networkNodeID2 = atoi(tmpForNetworkIDEnd);
+            newEdge->networkNodeID1 = tmpSaveNetworkIDStart;
+            newEdge->networkNodeID2 = tmpSaveNetworkIDEnd;
             newEdge->bandwidth = atoi(tmpForBandwidth);
             newEdge->costPerGB = atoi(tmpForCostPerGB);
             newEdge->flow = 0;      // 最初Edge上没流量;
             newEdge->edge1 = NULL;
             newEdge->edge2 = NULL;
-            createMLGraph(atoi(tmpForNetworkIDStart), newEdge);
+            createMLGraph(tmpSaveNetworkIDStart, newEdge);
         }
         newEdge = (EdgePointer) malloc(sizeof(Edge));
         if (newEdge != NULL) {
-            newEdge->networkNodeID1 = atoi(tmpForNetworkIDEnd);
-            newEdge->networkNodeID2 = atoi(tmpForNetworkIDStart);
+            newEdge->networkNodeID1 = tmpSaveNetworkIDEnd;
+            newEdge->networkNodeID2 = tmpSaveNetworkIDStart;
             newEdge->bandwidth = atoi(tmpForBandwidth);
             newEdge->costPerGB = atoi(tmpForCostPerGB);
             newEdge->flow = 0;      // 最初Edge上没流量;
             newEdge->edge1 = NULL;
             newEdge->edge2 = NULL;
-            createMLGraph(atoi(tmpForNetworkIDEnd), newEdge);
+            createMLGraph(tmpSaveNetworkIDEnd, newEdge);
         }
         networkLinkNum++;
     }
+    // 打印出所有点邻接表的信息
+    // for(int i = 0; i < networkNodeNum-2; i ++)
+    // {
+    //     printf("networkNode[%d] :", i);
+    //     for(unsigned int j = 0; j < networkNode[i].adjoinPoint.size(); j ++)
+    //         printf("%d\t", networkNode[i].adjoinPoint[j]);
+    //     printf("\n");
+    // }
 }
 
 // start:networkNodeNum, End:networkNodeNum+1
@@ -1082,11 +1100,10 @@ void delSuperCollectionPoint()
 }
 
 //模拟退火算法
-double T = 20;//初始化温度
+double T = 100;//初始化温度
 double Tmin = 1e-8;//温度的下界
 int k = 100;//迭代的次数
-double Tdelta = 0.9999;//温度的下降率
-int serverNum = 0;
+double Tdelta = 0.99;//温度的下降率
 //这里延用遗传算法的数据结构，将每个网络节点保存为一个二进制位，初始状态随机选择一个网络节点和上一个状态比较
 void initializeSa(){
     int serverID[NETWORK_NODE_MAX_NUM];
@@ -1133,7 +1150,7 @@ void createNewAnswer(){
     printf("==createNewAnswer\n");
     int serverID[NETWORK_NODE_MAX_NUM];
     int serverNum = 0;
-    int statusChangeNum = 5;//稳态中的需要改变状态的点个数
+    int statusChangeNum = 1;//稳态中的需要改变状态的点个数
     int mutationGenePlace;//稳态中需要改变状态的点的位置
     int tempIndex;//临时记录选定的点的index
     memcpy(chromosome[2].geneSeq, chromosome[1].geneSeq, sizeof(bool)*geneNumPerChromo);
@@ -1142,13 +1159,12 @@ void createNewAnswer(){
             serverID[serverNum++] = tmpi;
         }
     }
+    int conNetNodeIDRand = 0;
     for(int i = 0; i < statusChangeNum; i ++){
         mutationGenePlace = serverID[rand() % serverNum];
+        conNetNodeIDRand = rand() % networkNode[mutationGenePlace].adjoinPoint.size();
         chromosome[2].geneSeq[mutationGenePlace] = 0;
-        tempIndex = networkNode[mutationGenePlace].nextEdge->networkNodeID2;
-        if(tempIndex == networkNodeNum-1){
-            tempIndex = networkNode[mutationGenePlace].nextEdge->edge1->networkNodeID2;
-        }
+        tempIndex = networkNode[mutationGenePlace].adjoinPoint[conNetNodeIDRand];
         chromosome[2].geneSeq[tempIndex] = 1;
         PRINT("change serverID from %d to %d\n", mutationGenePlace, tempIndex);
     }
@@ -1195,17 +1211,20 @@ void judgeNewAnswer(){
 
 void sa(){
     initializeSa();
+    //unsigned int r = 0;
     while(T > Tmin){
         createNewAnswer();
         judgeNewAnswer();
         
         T = T * Tdelta;
         ftime(&curTime);
+        //r ++;
         if((curTime.time-startTime.time)*1000 + (curTime.millitm-startTime.millitm) > ITERATION_TIME){
             printf("time out, ready to end it!\n");
             break;
         }
     }
+    //printf("次数为：%d\n", r);
 }
 
 //你要完成的功能总入口
