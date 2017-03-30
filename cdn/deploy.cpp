@@ -7,6 +7,7 @@
 #include <sys/timeb.h>
 #include <assert.h>
 #include <math.h>
+#include <set>
 
 // #define _DEBUG
 #undef _DEBUG
@@ -95,7 +96,8 @@ int geneNumPerChromo;
 double crossoverProbability = CROSSOVER_PROBABILITY;
 typedef struct Chromosome{
     bool haveCalc;      // 已经计算的就不要重复计算了
-    bool *geneSeq;      // bool类型比char类型快了10ms左右
+    // bool *geneSeq;      // bool类型比char类型快了10ms左右
+    set<int> geneSeq;      // bool类型比char类型快了10ms左右
     // char *topoFile;
     int cost;
     double probability_up;
@@ -821,48 +823,25 @@ void initialize()
     printf("==ga_initalize, chromosomeAllNum:%d, chromoKeepNum:%d, geneNumPerChromo:%d\n", chromosomeAllNum, chromoKeepNum, geneNumPerChromo);
     srand(time(0));
     for(int i=0; i<chromosomeAllNum; i++){
-        bool *geneSeq = (bool *)malloc(sizeof(bool)*geneNumPerChromo);
-        if( geneSeq != NULL){
-            memset(geneSeq, 0, sizeof(bool)*geneNumPerChromo);
-            if( i==0 ){       // 第一个就是用户直连节点为服务器，保证有解
-                for(int i=0; i<userNodeNum; i++){
-                    geneSeq[userNode[i].conNetNodeID] = 1;
-                }
-            } else {
-                // 这种方法比下面的方法快了一倍
-                for(int tmpi=0; tmpi<=userNodeNum*filterCoefficient; tmpi++){
-                    geneSeq[rand()%geneNumPerChromo] = rand()%2;
-                }
-                // int bit1Count = 0;
-                // do{
-                //     bit1Count = 0;
-                //     for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-                //         geneSeq[tmpi] = rand()%2;
-                //         if(geneSeq[tmpi])
-                //             bit1Count++;
-                //         printf("%d\t", geneSeq[tmpi]);
-                //     }
-                //     printf("\n");
-                // }while(bit1Count > userNodeNum);
+        if( i==0 ){       // 第一个就是用户直连节点为服务器，保证有解
+            for(int tmpi=0; tmpi<userNodeNum; tmpi++){
+                chromosome[i].geneSeq.insert(userNode[tmpi].conNetNodeID);
+                chromosome[i].haveCalc = false;
             }
-        }
-        ChromosomePointer newChromo = (ChromosomePointer)malloc(sizeof(Chromosome));
-        if(newChromo != NULL){
-            newChromo->geneSeq = geneSeq;
-            newChromo->cost = 0;
-            newChromo->haveCalc = false;
-            chromosome[i] = *newChromo;
         } else {
-            PRINT("malloc failed\n");
+            for(int tmpi=0; tmpi<=userNodeNum*filterCoefficient; tmpi++){
+                chromosome[i].geneSeq.insert(rand()%geneNumPerChromo);
+                chromosome[i].haveCalc = false;
+            }
         }
     }
     // ====================
     for(int i=0; i<chromosomeAllNum; i++){
         PRINT("chromosome:%d\t", i);
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            PRINT("%d\t", (int)chromosome[i].geneSeq[tmpi]);
+        for(set<int>::iterator ite=chromosome[i].geneSeq.begin(); ite!=chromosome[i].geneSeq.end(); ite++){
+            printf("%d\t", *ite);
         }
-        PRINT("\n");
+        printf("\n");
     }
 }
 
@@ -914,10 +893,8 @@ bool fitness()
         serverNum = 0;
         memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
         initForRestart();
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            if(chromosome[i].geneSeq[tmpi]){
-                serverID[serverNum++] = tmpi;
-            }
+        for(set<int>::iterator ite=chromosome[i].geneSeq.begin(); ite!=chromosome[i].geneSeq.end(); ite++){
+            serverID[serverNum++] = *ite;
         }
         // userNodeNum*的系数不好说是多少
         if(serverNum > userNodeNum*filterCoefficient){
@@ -1032,15 +1009,23 @@ void crossover()
         //     PRINT("%d\t", (int)chromosome[chromosomeIndex1].geneSeq[tmpi]);
         // }
         // PRINT("\n");
-        memcpy(chromosome[crossoverChildStartIndex+i*2].geneSeq, chromosome[chromosomeIndex1].geneSeq, sizeof(bool)*geneNumPerChromo);
-        memcpy(chromosome[crossoverChildStartIndex+i*2+1].geneSeq, chromosome[chromosomeIndex2].geneSeq, sizeof(bool)*geneNumPerChromo);
+        chromosome[crossoverChildStartIndex+i*2].geneSeq = chromosome[chromosomeIndex1].geneSeq;
+        chromosome[crossoverChildStartIndex+i*2+1].geneSeq = chromosome[chromosomeIndex2].geneSeq;
         chromosome[crossoverChildStartIndex+i*2].haveCalc = false;
         chromosome[crossoverChildStartIndex+i*2+1].haveCalc = false;
+        // 这里交叉的太多了-----------------
         for(int tmpi=0; tmpi<geneNumPerChromo*CROSSOVER_PROBABILITY_DOWN; tmpi++){
             crossoverIndex = rand() % geneNumPerChromo;
-            bool tmp = chromosome[crossoverChildStartIndex+i*2].geneSeq[crossoverIndex];
-            chromosome[crossoverChildStartIndex+i*2].geneSeq[crossoverIndex] = chromosome[crossoverChildStartIndex+i*2+1].geneSeq[crossoverIndex];
-            chromosome[crossoverChildStartIndex+i*2+1].geneSeq[crossoverIndex] = tmp;
+            set<int>::iterator ite1 = chromosome[crossoverChildStartIndex+i*2].geneSeq.find(crossoverIndex);
+            set<int>::iterator ite2 = chromosome[crossoverChildStartIndex+i*2+1].geneSeq.find(crossoverIndex);
+            if(ite1 != chromosome[crossoverChildStartIndex+i*2].geneSeq.end() &&
+                ite2 == chromosome[crossoverChildStartIndex+i*2+1].geneSeq.end()){
+                chromosome[crossoverChildStartIndex+i*2].geneSeq.insert(crossoverIndex);
+            }
+            if(ite1 == chromosome[crossoverChildStartIndex+i*2].geneSeq.end() &&
+                ite2 != chromosome[crossoverChildStartIndex+i*2+1].geneSeq.end()){
+                chromosome[crossoverChildStartIndex+i*2+1].geneSeq.insert(crossoverIndex);
+            }
         }
     }
 }
@@ -1055,13 +1040,12 @@ void mutation()
         // for(int tmpi=0; tmpi<10*VARIATION_PROBABILITY_DOWN; tmpi++){
         for(int tmpi=0; tmpi<1; tmpi++){
             int mutationGenePlace = rand() % geneNumPerChromo;          //计算发生变异的染色体上需要变异的基因位点
-            bool flag = chromosome[mutationChromoID].geneSeq[mutationGenePlace];  //对相应的基因位点进行变异
-            memcpy(chromosome[mutationChildStartIndex+i].geneSeq, chromosome[mutationChromoID].geneSeq, sizeof(bool)*geneNumPerChromo);
-            chromosome[mutationChildStartIndex+i].haveCalc = false;
-            if(flag)
-                chromosome[mutationChildStartIndex+i].geneSeq[mutationGenePlace] = 0;
+            set<int>::iterator ite = chromosome[mutationChromoID].geneSeq.find(mutationGenePlace);  //对相应的基因位点进行变异
+            if(ite == chromosome[mutationChromoID].geneSeq.end())
+                chromosome[mutationChromoID].geneSeq.insert(mutationChromoID);
             else
-                chromosome[mutationChildStartIndex+i].geneSeq[mutationGenePlace] = 1;
+                chromosome[mutationChromoID].geneSeq.erase(mutationChromoID);
+            chromosome[mutationChildStartIndex+i].haveCalc = false;
         }
     } 
 }
@@ -1198,7 +1182,7 @@ void delSuperCollectionPoint()
 double T = 100;//初始化温度
 double Tmin = 1e-8;//温度的下界
 int k = 100;//迭代的次数
-double Tdelta = 0.999;//温度的下降率
+double Tdelta = 0.99999;//温度的下降率
 //这里延用遗传算法的数据结构，将每个网络节点保存为一个二进制位，初始状态随机选择一个网络节点和上一个状态比较
 void initializeSa(){
     int serverID[NETWORK_NODE_MAX_NUM];
@@ -1209,39 +1193,26 @@ void initializeSa(){
     // 创建两条一模一样的染色体，其中一条需要进行变异(从消费节点)
     // 创建两条一模一样的染色体，其中一条需要进行变异(从流量最大点)
     for(int i = 0; i < 5; i ++){
-        bool *geneSeq = (bool *)malloc(sizeof(bool)*geneNumPerChromo);
-        if( geneSeq != NULL && i<3){
-            memset(geneSeq, 0, sizeof(bool)*geneNumPerChromo);
+        if(i<3){
             // 第一个就是用户直连节点为服务器，保证有解
-            for(int i=0; i<userNodeNum; i++){
-                geneSeq[userNode[i].conNetNodeID] = 1;
+            for(int tmpi=0; tmpi<userNodeNum; tmpi++){
+                chromosome[i].geneSeq.insert(userNode[tmpi].conNetNodeID);
+                chromosome[i].haveCalc = false;
             }
         }
-        if( geneSeq != NULL && i>2){
-            memset(geneSeq, 0, sizeof(bool)*geneNumPerChromo);
+        if(i>2){
             // 第一个就是用户直连节点为服务器，保证有解
             getServerID(serverID, userNodeNum);
-            for(int i=0; i<userNodeNum; i++){
-                geneSeq[serverID[i]] = 1;
+            for(int tmpi=0; tmpi<userNodeNum; tmpi++){
+                chromosome[i].geneSeq.insert(serverID[tmpi]);
+                chromosome[i].haveCalc = false;
             }
-        }
-        
-        ChromosomePointer newChromo = (ChromosomePointer)malloc(sizeof(Chromosome));
-        if(newChromo != NULL){
-            newChromo->geneSeq = geneSeq;
-            newChromo->cost = 0;
-            newChromo->haveCalc = false;
-            chromosome[i] = *newChromo;
-        } else {
-            PRINT("malloc failed\n");
         }
     }
 
     serverNum = 0;
-    for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-        if(chromosome[1].geneSeq[tmpi]){
-            serverID[serverNum++] = tmpi;
-        }
+    for(set<int>::iterator ite=chromosome[1].geneSeq.begin(); ite!=chromosome[1].geneSeq.end(); ite++){
+        serverID[serverNum++] = *ite;
     }
     if(PATH_SECCUSS == calcFlowPath(serverID , serverNum)){
         printf("userNode:chromosome[%d].cost:%d\n", 0, allCost+costPerServer*serverNum);
@@ -1250,18 +1221,24 @@ void initializeSa(){
     }
 
     serverNum = 0;
-    for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-        if(chromosome[3].geneSeq[tmpi]){
-            serverID[serverNum++] = tmpi;
-        }
+    for(set<int>::iterator ite=chromosome[3].geneSeq.begin(); ite!=chromosome[3].geneSeq.end(); ite++){
+        serverID[serverNum++] = *ite;
     }
     if(PATH_SECCUSS == calcFlowPath(serverID , serverNum)){
         printf("maxFlow:chromosome[%d].cost:%d\n", 0, allCost+costPerServer*serverNum);
         chromosome[3].cost = allCost+costPerServer*serverNum;
         if(chromosome[3].cost < chromosome[0].cost){
-            memcpy(chromosome[0].geneSeq, chromosome[3].geneSeq, sizeof(bool)*geneNumPerChromo);
+            chromosome[0].geneSeq = chromosome[3].geneSeq;
             chromosome[0].cost = allCost+costPerServer*serverNum;
         }
+    }
+    // ====================
+    for(int i=0; i<5; i++){
+        printf("chromosome:%d\t", i);
+        for(set<int>::iterator ite=chromosome[i].geneSeq.begin(); ite!=chromosome[i].geneSeq.end(); ite++){
+            printf("%d\t", *ite);
+        }
+        printf("\n");
     }
 } 
 
@@ -1269,27 +1246,25 @@ void createNewAnswer(int source, int newAnswer){
     //状态转移需要稳定的状态开始转移到它的邻接点，作为新的状态
     //从直连的点中选择5~10个点进行处理，这几个点中选择他们的邻接点来作为新状态
     printf("==createNewAnswer\n");
-    int serverID[NETWORK_NODE_MAX_NUM];
     int serverNum = 0;
     int statusChangeNum = 1;//稳态中的需要改变状态的点个数
     int mutationGenePlace;//稳态中需要改变状态的点的位置
     int tempIndex;//临时记录选定的点的index
     if(source == 1) printf("userNode start!\n");
     if(source == 3) printf("maxFlow start!\n");
-    memcpy(chromosome[newAnswer].geneSeq, chromosome[source].geneSeq, sizeof(bool)*geneNumPerChromo);
-    for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-        if(chromosome[newAnswer].geneSeq[tmpi]){
-            serverID[serverNum++] = tmpi;
-        }
-    }
+    chromosome[newAnswer].geneSeq = chromosome[source].geneSeq;
     int conNetNodeIDRand = 0;
-    for(int i = 0; i < statusChangeNum; i ++){
-        mutationGenePlace = serverID[rand() % serverNum];
-        chromosome[newAnswer].geneSeq[mutationGenePlace] = 0;
+    set<int>::iterator ite=chromosome[newAnswer].geneSeq.begin();
+    serverNum = chromosome[newAnswer].geneSeq.size();
+    for(int i = 0; i < statusChangeNum; i++){
+        int randIndex = rand()%serverNum;
+        for(int tmpi=0; tmpi<randIndex; tmpi++, ite++);
+        mutationGenePlace = *ite;
+        chromosome[newAnswer].geneSeq.erase(mutationGenePlace);
         conNetNodeIDRand = rand() % networkNode[mutationGenePlace].adjoinPoint.size();
         tempIndex = networkNode[mutationGenePlace].adjoinPoint[conNetNodeIDRand];
-        chromosome[newAnswer].geneSeq[tempIndex] = 1;
-        PRINT("change serverID from %d to %d\n", mutationGenePlace, tempIndex);
+        chromosome[newAnswer].geneSeq.insert(tempIndex);
+        printf("change serverID from %d to %d\n", mutationGenePlace, tempIndex);
     }
 }
 
@@ -1299,27 +1274,28 @@ void judgeNewAnswer(int source, int newAnswer){
     if(source == 3) printf("maxFlow start!\n");
     int serverID[NETWORK_NODE_MAX_NUM];
     int serverNum = 0;
-    for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-        if(chromosome[2].geneSeq[tmpi]){
-            serverID[serverNum++] = tmpi;
-        }
+    // printf("serverID:");
+    for(set<int>::iterator ite=chromosome[newAnswer].geneSeq.begin(); ite!=chromosome[newAnswer].geneSeq.end(); ite++){
+        serverID[serverNum++] = *ite;
+        // printf("%d, ", *ite);
     }
+    // printf("\n");
 
     initForRestart();
     if(PATH_SECCUSS == calcFlowPath(serverID, serverNum)){
-        // printf("chromosome[%d].cost:%d\n", 2, allCost+costPerServer*serverNum);
+        printf("chromosome[%d].cost:%d\n", 2, allCost+costPerServer*serverNum);
         chromosome[newAnswer].cost = allCost+costPerServer*serverNum;
     } else {
-        // printf("have no path \n");
+        printf("have no path \n");
         chromosome[newAnswer].cost = MAXINT;
     }
     printf("chromosome[0].cost: %d, chromosome[%d].cost: %d\n",chromosome[0].cost, source, chromosome[source].cost);
     if(chromosome[source].cost > chromosome[newAnswer].cost){
-        memcpy(chromosome[source].geneSeq, chromosome[newAnswer].geneSeq, sizeof(bool)*geneNumPerChromo);
+        chromosome[source].geneSeq = chromosome[newAnswer].geneSeq;
         chromosome[source].cost = chromosome[newAnswer].cost;
 
         if(chromosome[source].cost < chromosome[0].cost){
-            memcpy(chromosome[0].geneSeq, chromosome[source].geneSeq, sizeof(bool)*geneNumPerChromo);
+            chromosome[0].geneSeq = chromosome[source].geneSeq;
             chromosome[0].cost = chromosome[source].cost;
         }
     } else if(chromosome[source].cost < chromosome[newAnswer].cost){
@@ -1327,7 +1303,7 @@ void judgeNewAnswer(int source, int newAnswer){
         double accetpProbability = exp(subCost / T);
         if(accetpProbability > (rand()%100 / 100.0)){
             printf("accept new answer\n");
-            memcpy(chromosome[source].geneSeq, chromosome[newAnswer].geneSeq, sizeof(bool)*geneNumPerChromo);
+            chromosome[source].geneSeq = chromosome[newAnswer].geneSeq;
             chromosome[source].cost = chromosome[newAnswer].cost;
         }else printf("deny new answer\n");
     }
@@ -1429,10 +1405,8 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         startWriteToFile = true;
         initForRestart();
         memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            if(chromosome[0].geneSeq[tmpi]){
-                serverID[serverNum++] = tmpi;
-            }
+        for(set<int>::iterator ite=chromosome[i].geneSeq.begin(); ite!=chromosome[i].geneSeq.end(); ite++){
+            serverID[serverNum++] = *ite;
         }
     }else if(200<networkNodeNum && networkNodeNum <500){
         chromosomeBase  = 20;
@@ -1441,20 +1415,16 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         startWriteToFile = true;
         initForRestart();
         memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            if(chromosome[0].geneSeq[tmpi]){
-                serverID[serverNum++] = tmpi;
-            }
+        for(set<int>::iterator ite=chromosome[i].geneSeq.begin(); ite!=chromosome[i].geneSeq.end(); ite++){
+            serverID[serverNum++] = *ite;
         }
     }else{
         sa();
         startWriteToFile = true;
         initForRestart();
         memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            if(chromosome[0].geneSeq[tmpi]){
-                serverID[serverNum++] = tmpi;
-            }
+        for(set<int>::iterator ite=chromosome[i].geneSeq.begin(); ite!=chromosome[i].geneSeq.end(); ite++){
+            serverID[serverNum++] = *ite;
         }
     }
 
