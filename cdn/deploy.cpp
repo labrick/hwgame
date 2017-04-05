@@ -57,10 +57,12 @@ typedef struct Edge{
     int flow;
     int bandwidth;
     int costPerGB;
+    int costPerGBak;
     int networkNodeID1; // 一种默认的规定：ID1等于网络节点头ID
     int networkNodeID2;
     struct Edge *edge1;
     struct Edge *edge2;
+    struct Edge *pair;
 }Edge, *EdgePointer;
 typedef struct NetworkNode{
     int curNetworkNodeID;
@@ -96,6 +98,10 @@ int chromosomeAllNum;
 int chromoKeepNum;
 int geneNumPerChromo;
 double crossoverProbability = CROSSOVER_PROBABILITY;
+double addProbabilityUp = 0.1;
+double delProbabilityUp = 0.9;
+double moveProbabilityUp = 1;
+
 typedef struct Chromosome{
     bool haveCalc;      // 已经计算的就不要重复计算了
     bitset<NETWORK_NODE_MAX_NUM> geneSeq;      // bool类型比char类型快了10ms左右
@@ -121,7 +127,7 @@ void init()
     topoFileCurPointer = topo_file + 8;
 }
 
-// 用户需求量的大的排在前面以便优先处理
+// 用户需求量的小的排在前面以便优先处理
 void bubbleSortUserNode()
 {
     for(int i=0; i<userNodeNum; i++){
@@ -324,27 +330,30 @@ void readNetworkNodeInfo(char * topo[MAX_EDGE_NUM], int line_num)
         //     printf("%d - %d repeat edge!\n", atoi(tmpForNetworkIDStart), atoi(tmpForNetworkIDEnd));
         //     continue;
         // }
-        EdgePointer newEdge = (EdgePointer) malloc(sizeof(Edge));
-        if (newEdge != NULL) {
-            newEdge->networkNodeID1 = tmpSaveNetworkIDStart;
-            newEdge->networkNodeID2 = tmpSaveNetworkIDEnd;
-            newEdge->bandwidth = atoi(tmpForBandwidth);
-            newEdge->costPerGB = atoi(tmpForCostPerGB);
-            newEdge->flow = 0;      // 最初Edge上没流量;
-            newEdge->edge1 = NULL;
-            newEdge->edge2 = NULL;
-            createMLGraph(tmpSaveNetworkIDStart, newEdge);
-        }
-        newEdge = (EdgePointer) malloc(sizeof(Edge));
-        if (newEdge != NULL) {
-            newEdge->networkNodeID1 = tmpSaveNetworkIDEnd;
-            newEdge->networkNodeID2 = tmpSaveNetworkIDStart;
-            newEdge->bandwidth = atoi(tmpForBandwidth);
-            newEdge->costPerGB = atoi(tmpForCostPerGB);
-            newEdge->flow = 0;      // 最初Edge上没流量;
-            newEdge->edge1 = NULL;
-            newEdge->edge2 = NULL;
-            createMLGraph(tmpSaveNetworkIDEnd, newEdge);
+        EdgePointer newEdge1 = (EdgePointer) malloc(sizeof(Edge));
+        EdgePointer newEdge2 = (EdgePointer) malloc(sizeof(Edge));
+        if (newEdge1 != NULL && newEdge2 != NULL) {
+            newEdge1->networkNodeID1 = tmpSaveNetworkIDStart;
+            newEdge1->networkNodeID2 = tmpSaveNetworkIDEnd;
+            newEdge1->bandwidth = atoi(tmpForBandwidth);
+            newEdge1->costPerGB = atoi(tmpForCostPerGB);
+            newEdge1->costPerGBak = newEdge1->costPerGB;
+            newEdge1->pair = newEdge2;
+            newEdge1->flow = 0;      // 最初Edge上没流量;
+            newEdge1->edge1 = NULL;
+            newEdge1->edge2 = NULL;
+            createMLGraph(tmpSaveNetworkIDStart, newEdge1);
+
+            newEdge2->networkNodeID1 = tmpSaveNetworkIDEnd;
+            newEdge2->networkNodeID2 = tmpSaveNetworkIDStart;
+            newEdge2->bandwidth = atoi(tmpForBandwidth);
+            newEdge2->costPerGB = 0-atoi(tmpForCostPerGB);
+            newEdge2->costPerGBak = newEdge2->costPerGB;
+            newEdge2->pair = newEdge1;
+            newEdge2->flow = 0;      // 最初Edge上没流量;
+            newEdge2->edge1 = NULL;
+            newEdge2->edge2 = NULL;
+            createMLGraph(tmpSaveNetworkIDEnd, newEdge2);
         }
         networkLinkNum++;
     }
@@ -557,18 +566,31 @@ void addSuperSourcePoint(int *serverID, int serverNum)
 {
     for(int i=0; i<serverNum; i++){
         if(serverID[i] == -1)   continue;   // 这里是为了不需要因为删除serverID中的某个ID不用移动准备的
-        EdgePointer newEdge = (EdgePointer) malloc(sizeof(Edge));
-        if (newEdge != NULL) {
+        EdgePointer newEdge1 = (EdgePointer) malloc(sizeof(Edge));
+        EdgePointer newEdge2 = (EdgePointer) malloc(sizeof(Edge));
+        if (newEdge1 != NULL && newEdge2 != NULL) {
             PRINT("add super edge %d to %d\n", superSourcePoint, serverID[i]);
             // 一种默认的规定：ID1等于节点头ID
-            newEdge->networkNodeID1 = superSourcePoint;
-            newEdge->networkNodeID2 = serverID[i];
-            newEdge->bandwidth = MAXINT;
-            newEdge->costPerGB = 0;
-            newEdge->flow = 0;      // 最初Edge上没流量;
-            newEdge->edge1 = NULL;
-            newEdge->edge2 = NULL;
-            createMLGraph(superSourcePoint, newEdge);
+            newEdge1->networkNodeID1 = superSourcePoint;
+            newEdge1->networkNodeID2 = serverID[i];
+            newEdge1->bandwidth = MAXINT;
+            newEdge1->costPerGB = 0;
+            newEdge1->pair = newEdge2;
+            newEdge1->flow = 0;      // 最初Edge上没流量;
+            newEdge1->edge1 = NULL;
+            newEdge1->edge2 = NULL;
+            createMLGraph(superSourcePoint, newEdge1);
+            
+            newEdge2->networkNodeID1 = serverID[i];
+            newEdge2->networkNodeID2 = superSourcePoint;
+            newEdge2->bandwidth = MAXINT;
+            newEdge2->costPerGB = 0;
+            newEdge2->pair = newEdge1;
+            newEdge2->flow = 0;      // 最初Edge上没流量;
+            newEdge2->edge1 = NULL;
+            newEdge2->edge2 = NULL;
+            createMLGraph(serverID[i], newEdge2);
+
             networkLinkNum++;
         }
     }
@@ -603,7 +625,7 @@ void delSuperSourcePoint(int delCount)
 
 int exeCalcFlowCount = 0;
 // return cannot arrive networknode connected to usernode
-int calcFlowPath(int *serverID, int serverNum)
+int calcFlowPathByDijk(int *serverID, int serverNum)
 {
     timeb timeStart, timeEnd;
     ftime(&timeStart);
@@ -687,12 +709,13 @@ int calcFlowPath(int *serverID, int serverNum)
     return PATH_FAILED;
 }
 // 清除当前流，重新开始
-void clearFlow(NetworkNodePointer networkNode)
+void clearFlowAndRestoreCost(NetworkNodePointer networkNode)
 {
     EdgePointer pointer;
     pointer = networkNode->nextEdge;
     while (pointer != NULL) {
         pointer->flow = 0;
+        pointer->costPerGB = pointer->costPerGBak;
         if ( networkNode->curNetworkNodeID == pointer->networkNodeID1) {
             pointer = pointer->edge1;
         } else {
@@ -702,17 +725,23 @@ void clearFlow(NetworkNodePointer networkNode)
     }
 }
 
+vector<int> topoFileLine[NETWORK_PATH_MAX_NUM];
+int minCost = 0;
 void initForRestart()
 {
     PRINT("==initForRestart\n");
     for(int i=0; i<networkNodeNum; i++){
-        clearFlow(&networkNode[i]);
+        clearFlowAndRestoreCost(&networkNode[i]);
     }
     networkPathNum = 0;
     allCost = 0;
+    minCost = 0;
     memset(topo_file, 0, sizeof(char)*NETWORK_NODE_MAX_NUM);
-    strcpy(topo_file, "      \n\n");
-    topoFileCurPointer = topo_file + 8;
+    // strcpy(topo_file, "      \n\n");
+    // topoFileCurPointer = topo_file + 8;
+    topoFileCurPointer = topo_file;
+    for(int i=0; (int)topoFileLine[i].size(); i++)
+        topoFileLine[i].clear();
 }
 typedef struct ServerInfo{
     int serverID;
@@ -730,74 +759,6 @@ void bubbleSort(ServerInfoPointer serverInfoPointer, int memNum)
                 serverInfoPointer[i] = tmp;
             }
         }
-    }
-}
-
-void getServerID(int *serverID, int serverNum)
-{
-    vector<int> mustServerID, mustServerAllFlow;
-    ServerInfo serverInfo[NETWORK_NODE_MAX_NUM];        // 为啥这里不能是数组指针
-    int count = 0;
-    PRINT("=====================getServerID\n");
-    for(int i=0; i<NETWORK_NODE_MAX_NUM; i++){
-        if (networkNode[i].nextEdge == NULL) {
-            PRINT("Traversal over\n");
-            break;
-        } else {
-            EdgePointer pointer = networkNode[i].nextEdge;
-            int tmpForAllFlow = 0;
-            while( pointer != NULL) {
-                // PRINT("networkNode[%d]: %d + %d = %d\n", i, tmpForAllFlow, pointer->bandwidth, tmpForAllFlow + pointer->bandwidth);
-                tmpForAllFlow += pointer->bandwidth;
-                if ( networkNode[i].curNetworkNodeID == pointer->networkNodeID1) {
-                    pointer = pointer->edge1;
-                } else {
-                    pointer = pointer->edge2;
-                }
-            }
-            // 判断必选服务器
-            // PRINT("networkNode[%d] flow is: %d\n", i, tmpForAllFlow);
-            for(int tmpi=0; tmpi<userNodeNum; tmpi++){
-                if((networkNode[i].curNetworkNodeID == userNode[i].conNetNodeID) && \
-                        (tmpForAllFlow <= userNode[i].bandwidth)){
-                    mustServerID.push_back(userNode[i].conNetNodeID);
-                    mustServerAllFlow.push_back(tmpForAllFlow);
-                }
-            }
-            ServerInfoPointer newServerInfo = (ServerInfoPointer)malloc(sizeof(ServerInfo)*networkNodeNum);
-            if(newServerInfo != NULL){
-                newServerInfo->serverID = networkNode[i].curNetworkNodeID;
-                newServerInfo->serverFlow = tmpForAllFlow;
-                newServerInfo->weigth = 100;
-                serverInfo[count++] = *newServerInfo;
-            }
-        }   
-        
-    }
-    bubbleSort(serverInfo, networkNodeNum);
-    for(int i=0; i<serverNum; i++){
-        if(serverInfo[i].weigth == 100){
-            serverID[i] = serverInfo[i].serverID;
-            serverInfo[i].weigth *= 0.8;
-        }
-        for(int tmpi=i; tmpi<networkNodeNum; tmpi++){
-            if((serverInfo[tmpi].weigth == 100) && 
-                    isDirectConnect(i, serverInfo[tmpi].serverID)){
-                serverInfo[tmpi].weigth *= 0.8;
-            }
-        }
-        bubbleSort(serverInfo, networkNodeNum);
-    }
-    for(int i=0; i<networkNodeNum; i++){
-        PRINT("ID:%d, flow:%d, flow:%d*weight:%d=%d\n", serverInfo[i].serverID, serverInfo[i].serverFlow, serverInfo[i].serverFlow, serverInfo[i].weigth, serverInfo[i].serverFlow*serverInfo[i].weigth);
-    }
-    for(int i=0; i<(int)mustServerID.size(); i++){
-        PRINT("serverID:%d is mustServerID\n", mustServerID[mustServerID.size()-1]);
-        serverID[serverNum-i] = mustServerID[mustServerID.size()-1];
-    }
-    for(int i=0; i<serverNum; i++){
-        PRINT("serverID:%d\tmaxFlow:%d\n", serverInfo[i].serverID, serverInfo[i].serverFlow);
-        serverID[i] = serverInfo[i].serverID;
     }
 }
 
@@ -934,6 +895,7 @@ int minCostKeepCount = 0;
 int gaExeCount = 0;
 // 用来判断时间是不是到了，这里面的for执行的快
 // false可以继续， true可以退出了
+int calcFlowPath(int *serverID, int serverNum);
 bool fitness()
 {
     printf("==ga_fitness\n");
@@ -953,11 +915,17 @@ bool fitness()
         serverNum = 0;
         memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
         initForRestart();
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            if(chromosome[i].geneSeq[tmpi]){
-                serverID[serverNum++] = tmpi;
-            }
-        }
+        printf("serverID:\n");
+        serverID[serverNum++] = 0;
+        serverID[serverNum++] = 1;
+        serverID[serverNum++] = 22;
+        // for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
+        //     if(chromosome[i].geneSeq[tmpi]){
+        //         serverID[serverNum++] = tmpi;
+        //         // printf("%d, ", tmpi);
+        //     }
+        // }
+        // printf("\n");
         // userNodeNum*的系数不好说是多少
         if(serverNum > (userNodeNum+SA_IN_GA_NUM)*filterCoefficient){
             printf("serverNum:%d > userNodeNum:%d * %f = %f\n", serverNum, userNodeNum, filterCoefficient, userNodeNum*filterCoefficient);
@@ -988,6 +956,18 @@ bool fitness()
             PRINT("have no path \n");
             chromosome[i].cost = MAXINT;
         }
+        for(int i=0; topoFileLine[i].size(); i++){
+            for(int tmpi=0; tmpi<(int)topoFileLine[i].size()-1; tmpi++){
+                // charNum = sprintf(topoFileCurPointer, "%d ", topoFileLine[i][topoFileLine[i].size()-1-tmpi]);
+                // topoFileCurPointer += charNum;
+                printf("%d ", topoFileLine[i][topoFileLine[i].size()-1-tmpi]);
+            }
+            // charNum = sprintf(topoFileCurPointer, "\n");
+            // topoFileCurPointer += charNum;
+            printf("\n");
+        }
+        if(i==2)
+              while(1);
         ftime(&curTime);
         if((curTime.time-startTime.time)*1000 + (curTime.millitm-startTime.millitm) > ITERATION_TIME){
             printf("gaExeCount:%d\n", gaExeCount);
@@ -1037,7 +1017,7 @@ int runnerGambleGetChromo()
     }
     for(int i=0; i<chromoKeepNum; i++){
         if((chromosome[i].probability_down < probability) && (probability <= chromosome[i].probability_up)){
-            printf("runnerGambleGetChromo return %d\n", i);
+            PRINT("runnerGambleGetChromo return %d\n", i);
             return i;
         }
     }
@@ -1155,7 +1135,7 @@ void ga()
 {
     printf("==ga\n");
     initialize();
-    preProcessChromoForGa();
+    // preProcessChromoForGa();
     // for(int i=0; i<ITERATION_NUM; i++){
     while(1){
         gaExeCount++;
@@ -1190,91 +1170,233 @@ int getUserFlow(int userNodeID)
     return -1;
 }
 
-// 检查result是否符合结果规则
-void checkResult(const char * const fileName)
+// 返回实际满足的流量数
+// 这里返回有三种情况：1.到达汇点；2.满足需求；3.已经达到最大流
+// 所达到的效果：计算费用流，向下一级更新已访问
+bool isAccess[NETWORK_NODE_MAX_NUM];
+int testIte = 0;
+int aug(int networkNodeIDStart, int allNeedFlow)
 {
-    char *topo[NETWORK_PATH_MAX_NUM+2];
-    int line_num;
-    line_num = read_file(topo, NETWORK_PATH_MAX_NUM, fileName);
+    int curNeedFlow = allNeedFlow;
+    testIte++;
+    // printf("==aug:%d\n", testIte);
+    if(networkNodeIDStart == superCollectionPoint){
+        for(int i=0; i<testIte; i++)    printf("-----------");
+        // printf("IDStart == superCollectionPoint, exit\n");
+        // printf("one path ok, allCost:%d = allCost:%d + the cost:minCost:%d * allUserNeed:%d\n", allCost+minCost*allNeedFlow, allCost, minCost, allNeedFlow);
+        // printf("minCost:%d, allNeedFlow:%d\n", minCost, allNeedFlow);
+        allCost += minCost*allNeedFlow;
+        return allNeedFlow; // 这个逗号是干嘛？
+    }
+    // for(int i=0; i<testIte; i++)    printf("-----------");
+    // printf("testIte:%d, access networkNodeID:%d\n", testIte, networkNodeIDStart);
+    isAccess[networkNodeIDStart] = true;  // 设起始点已经访问
+    // 访问networkNodeIDStart所有的边
+    for(Edge *nextEdge=networkNode[networkNodeIDStart].nextEdge; nextEdge; nextEdge=nextEdge->edge1){
+        // for(int i=0; i<testIte; i++)    printf("-----------");
+        // printf("testIte:%d, start from:%d, bandwidth:%d, isAccess:%d, costPerGB:%d\n",
+        //         testIte, nextEdge->networkNodeID2, nextEdge->bandwidth-nextEdge->flow, isAccess[nextEdge->networkNodeID2], nextEdge->costPerGB);
+        // 如果有带宽，下一节点没有被访问过，并且费用值为0则访问
+        if((nextEdge->bandwidth>nextEdge->flow) && !nextEdge->costPerGB && !isAccess[nextEdge->networkNodeID2])
+        {
+            // 下一节点所需要的流量值
+            // for(int i=0; i<testIte; i++)    printf("-----------");
+            // printf("curNeedFlow:%d, bandwidth:%d\n", curNeedFlow, nextEdge->bandwidth-nextEdge->flow);
+            int getedFlow = aug(nextEdge->networkNodeID2, min(curNeedFlow, nextEdge->bandwidth-nextEdge->flow));   // 只要不递归到底，一直都返回0
+            testIte--;
+            // for(int i=0; i<testIte; i++)    printf("-----------");
+            // printf("testIte:%d, %d getedFlow:%d from %d\n", testIte, networkNodeIDStart, getedFlow, nextEdge->networkNodeID2);
+            // i->bandwidth -= getedFlow;
+            // i->pair->bandwidth += getedFlow;
+            if(getedFlow){
+                if(nextEdge->networkNodeID2 == superCollectionPoint){
+                    // 检查上一个路径
+                    if(networkPathNum){
+                        if((int)topoFileLine[networkPathNum-1].size() == topoFileLine[networkPathNum-1][0]){    // 前一个路径ok，检查再前面的路径
+                            // printf("perfect path:%d, check pre path\n", networkPathNum-1);
+                            // for(int tmpi=0; tmpi<(int)topoFileLine[networkPathNum-1].size(); tmpi++){
+                            //     printf("%d, ", topoFileLine[networkPathNum-1][topoFileLine[networkPathNum-1].size()-1-tmpi]);
+                            // }
+                            // printf("\n");
+                            for(int i=2; i<=networkPathNum && topoFileLine[networkPathNum-i][0]!=(int)topoFileLine[networkPathNum-i].size(); i++){
+                                // for(int tmpi=0; tmpi<(int)topoFileLine[networkPathNum-i].size(); tmpi++){
+                                //     printf("%d, ", topoFileLine[networkPathNum-i][topoFileLine[networkPathNum-i].size()-1-tmpi]);
+                                // }
+                                // printf("\n");
+                                int restNetworkNum = topoFileLine[networkPathNum-i][0] - (int)topoFileLine[networkPathNum-i].size();
+                                // printf("networkPathNum:%d, vector size:%d, [0]:%d, so get %d num from topoFileLine[%d]\n", networkPathNum-i, (int)topoFileLine[networkPathNum-i].size(), topoFileLine[networkPathNum-i][0], restNetworkNum, networkPathNum-i+1);
+                                for(int tmpi=0; tmpi<restNetworkNum; tmpi++){
+                                    // printf("get %d in topoFileLine:%d, put into topoFileLine:%d\n", topoFileLine[networkPathNum-i+1][topoFileLine[networkPathNum-i+1].size()-restNetworkNum+tmpi], networkPathNum-1, networkPathNum-i);
+                                    topoFileLine[networkPathNum-i].push_back(
+                                            topoFileLine[networkPathNum-i+1][topoFileLine[networkPathNum-i+1].size()-restNetworkNum+tmpi]); 
+                                }
+                            }
+                        }
+                    }
+                    topoFileLine[networkPathNum].push_back(testIte+2);    // 先放入路径中节点的个数（包括源汇）
+                    // topoFileLine[networkPathNum].push_back(minCost);
+                    topoFileLine[networkPathNum].push_back(getedFlow);
+                    topoFileLine[networkPathNum].push_back(getUserNodeID(nextEdge->networkNodeID1));
+                    // topoFileLine[networkPathNum].push_back(superCollectionPoint);
+                    networkPathNum++;
+                } else {
+                    topoFileLine[networkPathNum-1].push_back(nextEdge->networkNodeID2);
+                    // printf("put %d in topoFileLine:%d\n", nextEdge->networkNodeID2, networkPathNum-1);
+                }
+                // printf("===================================================================================================:%d\n", nextEdge->networkNodeID2);
+                // printf("update flow:%d to %d between %d to %d\n", nextEdge->flow, nextEdge->flow+getedFlow, nextEdge->networkNodeID1, nextEdge->networkNodeID2);
+                if(nextEdge->networkNodeID1 != superSourcePoint)
+                    nextEdge->flow += getedFlow;
+            }
+            curNeedFlow -= getedFlow;
+            // for(int i=0; i<testIte; i++)    printf("-----------");
+            // printf("curNeedFlow:%d\n", curNeedFlow);
+            if(!curNeedFlow){        // 当前流为0
+                // for(int i=0; i<testIte; i++)    printf("-----------");
+                // printf("allNeedFlow satified, exit\n");
+                return allNeedFlow;     // 递归到这里才是真正的满足了需求
+            }
+        }
+    }
+    // for(int i=0; i<testIte; i++)    printf("-----------");
+    // printf("no need satified, exit, have satified flow:%d\n", allNeedFlow-curNeedFlow);
+    return allNeedFlow-curNeedFlow; // 这里开始一直为0，代表没有路了
+}
 
-    printf("line num is :%d \n", line_num);
-    if (line_num == 0)
-    {
-        printf("Please input valid topo file.\n");
-        return;
+bool modlabel()
+{
+    // printf("==modlabel\n");
+    int curMinCost = MAXINT;
+    for(int i=0;i<=networkNodeNum;++i)
+        if(isAccess[i])
+            // 遍历下一级所有边，找到最小费用
+            for(Edge *j=networkNode[i].nextEdge; j; j=j->edge1){
+                // printf("from %d to %d, isAccess:%d, bandwidth:%d, cost:%d\n",
+                //         i, j->networkNodeID2, isAccess[j->networkNodeID2], j->bandwidth-j->flow, j->costPerGB);
+                if((j->bandwidth>j->flow) && !isAccess[j->networkNodeID2] && j->costPerGB < curMinCost){
+                    // printf("min cost deal with edge:%d - %d, change curMinCost from %d to %d\n", 
+                    //         j->networkNodeID1, j->networkNodeID2, curMinCost, j->costPerGB);
+                    curMinCost = j->costPerGB;
+                }
+            }
+    printf("curMinCost:%d\n", curMinCost);
+    if(curMinCost == MAXINT)
+        return false;
+    for(int i=0; i<=networkNodeNum; ++i){
+        if(isAccess[i]){
+            // 这里会把这一级中某条边的费用减为0，留给aug计算
+            for(Edge *j=networkNode[i].nextEdge; j; j=j->edge1){
+                printf("deal with edge:%d - %d, change %d to %d\n", j->networkNodeID1, j->networkNodeID2, j->costPerGB, j->costPerGB-curMinCost);
+                j->costPerGB -= curMinCost;
+                j->pair->costPerGB += curMinCost;
+                // j->costPerGB -= curMinCost;
+                // j->pair->costPerGB += curMinCost;
+            }
+        } 
     }
-    if(line_num-2 != atoi(topo[0])){
-        printf("path num != real num\n");
-        return;
-    }
-    int tmpi = 0;
-    int preNum = tmpi;
-    vector<int> data[line_num];
-    char curData[5];
-    for(int i=2; i<line_num; i++){
-        PRINT("new line %d\n", i);
-        preNum = tmpi = 0;
-        while(*((char *)topo[i]+tmpi) != '\n'){
-            memset(curData, 0, sizeof(curData));
-            while(*((char *)topo[i]+tmpi) != ' '){
-                PRINT("%c\t", *(topo[i]+tmpi));
-                curData[tmpi-preNum] = *(topo[i]+tmpi);
-                tmpi++;
-                if(*((char *)topo[i]+tmpi) == '\n'){
+    printf("change minCost:%d to %d\n", minCost, minCost+curMinCost);
+    minCost += curMinCost;
+    return true;
+}
+
+void calcAllCost()
+{
+    PRINT("==calcAllCost\n");
+    allCost = 0;
+    int costPerGBOnPath = 0;
+    for(int i=0; topoFileLine[i].size(); i++){
+        costPerGBOnPath = 0;
+        for(int tmpi=3; tmpi<(int)topoFileLine[i].size()-1; tmpi++){
+            // printf("%d\n", topoFileLine[i][tmpi]);
+            for(Edge *nextEdge=networkNode[topoFileLine[i][tmpi]].nextEdge; nextEdge; nextEdge=nextEdge->edge1){
+                if(nextEdge->networkNodeID2 == topoFileLine[i][tmpi+1]){
+                    // printf("costPerGBOnPath:%d = costPerGBOnPath:%d + cost:%d between %d and %d\n", costPerGBOnPath+nextEdge->costPerGBak, costPerGBOnPath, nextEdge->costPerGBak, nextEdge->networkNodeID1, nextEdge->networkNodeID2);
+                    costPerGBOnPath += nextEdge->costPerGBak;
                     break;
                 }
             }
-            PRINT("new data %d\n", atoi(curData));
-            data[i].push_back(atoi(curData));
-            if(*((char *)topo[i]+tmpi) == '\n'){
-                break;
-            }
-            tmpi++;
-            preNum = tmpi;
         }
+        // printf("allCost:%d = allCost:%d + costPerGBOnPath:%d*flow:%d\n", allCost+costPerGBOnPath*topoFileLine[i][1], allCost, costPerGBOnPath, topoFileLine[i][1]);
+        allCost += costPerGBOnPath*topoFileLine[i][1];
     }
-    int curUserNodeID = -1, preUserNodeID = -1;
-    int allFlowPerUser = data[2][data[2].size()-1];
-    curUserNodeID = preUserNodeID = data[2][data[2].size()-2];
-    for(int i=3; i<line_num; i++){
-        curUserNodeID = data[i][data[i].size()-2];
-        // printf("curUserNodeID:%d, preUserNodeID:%d\n", curUserNodeID, preUserNodeID);
-        if(curUserNodeID == preUserNodeID){
-            allFlowPerUser += data[i][data[i].size()-1];
-        }else{
-            // getUserFlow(preUserNodeID);
-            if(allFlowPerUser == getUserFlow(preUserNodeID)){
-                printf("check userNode %d is ok!\n", preUserNodeID);
-            }else{
-                printf("userNode %d flow is not correct!\n", preUserNodeID);
+}
+
+int calcFlowPath(int *serverID, int serverNum){
+    PRINT("superSourcePoint:%d\n", superSourcePoint);
+    addSuperSourcePoint(serverID, serverNum);
+    int curNeedFlow = allUserNeed;
+    int haveSatifiedFlow = 0;
+    do{
+        // for (int i=0; i<NETWORK_NODE_MAX_NUM; i++) {
+        //     if (networkNode[i].nextEdge == NULL) {
+        //         break;
+        //     }
+        //     PRINT("NetworkNode %d: ", i);
+        //     printNetworkNodeInfo(&networkNode[i]);
+        // }
+        do{
+            testIte = 0;
+            PRINT("=============================start to restart, curNeedFlow:%d\n", curNeedFlow);
+            memset(isAccess,0,sizeof(isAccess));
+            haveSatifiedFlow = aug(superSourcePoint, curNeedFlow);
+            PRINT("=============================haveSatifiedFlow:%d\n", haveSatifiedFlow);
+            curNeedFlow -= haveSatifiedFlow;
+            if(!curNeedFlow){
+                // printf("=====================================================%d\n", allCost);
+                delSuperSourcePoint(serverNum);
+                // calcAllCost();
+                // printf("======================== PATH_SECCUSS\n");
+                return PATH_SECCUSS;
             }
-            allFlowPerUser = data[i][data[i].size()-1];
-            preUserNodeID = curUserNodeID;
-        }
-        if(i == line_num-1){
-            if(allFlowPerUser == getUserFlow(preUserNodeID)){
-                printf("last check userNode %d is ok!\n", preUserNodeID);
-            }else{
-                printf("userNode %d flow is not correct!\n", preUserNodeID);
-            }
-        }
+        }while(haveSatifiedFlow); // 这里会多计算一次说明没有了路径
+        // for(int i=0; i<NETWORK_NODE_MAX_NUM; i++)
+        //     printf("%4d", i);
+        // printf("\n");
+        // for(int i=0; i<NETWORK_NODE_MAX_NUM; i++)
+        //     printf("%4d", isAccess[i]);
+        // printf("\n");
+    }while(modlabel());
+    delSuperSourcePoint(serverNum);
+    // calcAllCost();
+    // printf("=====================================================%d\n", allCost);
+    if(curNeedFlow > 0){
+        // printf("======================== PATH_SECCUSS\n");
+        return PATH_FAILED;
+    }else{
+        // printf("======================== PATH_FAILED\n");
+        return PATH_SECCUSS;
     }
 }
 
 void addSuperCollectionPoint()
 {
     for(int i=0; i<userNodeNum; i++){
-        EdgePointer newEdge = (EdgePointer) malloc(sizeof(Edge));
-        if (newEdge != NULL) {
+        EdgePointer newEdge1 = (EdgePointer) malloc(sizeof(Edge));
+        EdgePointer newEdge2 = (EdgePointer) malloc(sizeof(Edge));
+        if (newEdge1 != NULL) {
             // PRINT("add super edge %d to %d\n", userNode[i].conNetNodeID, superCollectionPoint);
-            newEdge->networkNodeID1 = userNode[i].conNetNodeID;
-            newEdge->networkNodeID2 = superCollectionPoint;
-            newEdge->bandwidth = userNode[i].bandwidth;
-            newEdge->costPerGB = 0;
-            newEdge->flow = 0;      // 最初Edge上没流量;
-            newEdge->edge1 = NULL;
-            newEdge->edge2 = NULL;
-            createMLGraph(userNode[i].conNetNodeID, newEdge);
+            newEdge1->networkNodeID1 = userNode[i].conNetNodeID;
+            newEdge1->networkNodeID2 = superCollectionPoint;
+            newEdge1->bandwidth = userNode[i].bandwidth;
+            newEdge1->costPerGB = 0;
+            newEdge1->costPerGBak = 0;
+            newEdge1->pair = newEdge2;
+            newEdge1->flow = 0;      // 最初Edge上没流量;
+            newEdge1->edge1 = NULL;
+            newEdge1->edge2 = NULL;
+            createMLGraph(userNode[i].conNetNodeID, newEdge1);
+
+            newEdge2->networkNodeID1 = superCollectionPoint;
+            newEdge2->networkNodeID2 = userNode[i].conNetNodeID;
+            newEdge2->bandwidth = userNode[i].bandwidth;
+            newEdge2->costPerGB = 0;
+            newEdge2->costPerGBak = 0;
+            newEdge2->pair = newEdge1;
+            newEdge2->flow = 0;      // 最初Edge上没流量;
+            newEdge2->edge1 = NULL;
+            newEdge2->edge2 = NULL;
+            createMLGraph(superCollectionPoint, newEdge1);
+
             networkLinkNum++;
         }
     }
@@ -1364,9 +1486,6 @@ void createNewAnswer(int source, int newAnswer){
         }
     }
     int conNetNodeIDRand = 0;
-    double addProbabilityUp = 0.1;
-    double delProbabilityUp = 0.9;
-    double moveProbabilityUp = 1;
     for(int i = 0; i < statusChangeNum; i ++){
         double randProbability = (rand() % 100) / 100.0;
         mutationGenePlace = serverID[rand() % serverNum];
@@ -1377,10 +1496,10 @@ void createNewAnswer(int source, int newAnswer){
             chromosome[newAnswer].geneSeq.reset(mutationGenePlace);
             printf("[%d] randProbability:%f, del serverID %d\n", source, randProbability, mutationGenePlace);
         }else if(delProbabilityUp<randProbability && randProbability<moveProbabilityUp){
-            chromosome[newAnswer].geneSeq[mutationGenePlace] = 0;
+            chromosome[newAnswer].geneSeq.reset(mutationGenePlace);
             conNetNodeIDRand = rand() % networkNode[mutationGenePlace].adjoinPoint.size();
             tempIndex = networkNode[mutationGenePlace].adjoinPoint[conNetNodeIDRand];
-            chromosome[newAnswer].geneSeq[tempIndex] = 1;
+            chromosome[newAnswer].geneSeq.set(tempIndex);
             printf("[%d] move serverID from %d to %d\n", source, mutationGenePlace, tempIndex);
         }
     }
@@ -1521,17 +1640,12 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     // networkNodeNum+1 = superCollectionPoint
     PRINT("=======================\n");
     printf("NetworkNodeNum:%d, NetworkLinkNum:%d, UserNodeNum:%d, AllCost:%d\n", networkNodeNum, networkLinkNum, userNodeNum, allCost);
-    // if(networkNodeNum > 500){
-    //     memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
-    //     startWriteToFile = true;
-    //     initForRestart();
-
-    //     for(int tmpi=0; tmpi<userNodeNum; tmpi++){
-    //         serverID[serverNum++] = userNode[tmpi].conNetNodeID;
-    //     }
-    //     goto UP_500;
+    // for(int i=0; i<userNodeNum; i++){
+    //     serverID[serverNum++] = userNode[i].conNetNodeID;
     // }
-    //
+    // serverID[serverNum++] = 0;
+    // serverID[serverNum++] = 1;
+    // serverID[serverNum++] = 3;
     PRINT("start, end, band, cost, flow\n");
     for (i=0; i<NETWORK_NODE_MAX_NUM; i++) {
         if (networkNode[i].nextEdge == NULL) {
@@ -1541,22 +1655,37 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         printNetworkNodeInfo(&networkNode[i]);
     }
     PRINT("LinkItemNum: %d, NetworkNodeNum = %d\n", tmp, i);
+    // forTest();
+    // for(int i=0; topoFileLine[i].size(); i++){
+    //     for(int tmpi=0; tmpi<(int)topoFileLine[i].size()-1; tmpi++){
+    //         printf("%d, ", topoFileLine[i][topoFileLine[i].size()-1-tmpi]);
+    //     }
+    //     printf("\n");
+    // }
+    // delSuperSourcePoint(serverNum);
+    // initForRestart();
+    // serverID[serverNum++] = 0;
+    // serverID[serverNum++] = 3;
+    // serverID[serverNum++] = 22;
+    // addSuperSourcePoint(serverID, serverNum);
+    // calcFlowPath(serverID, serverNum);
+    
     //===========节点信息读入结构体完毕
     startWriteToFile = true;
     initForRestart();
     memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
     if(0<networkNodeNum && networkNodeNum<200){
-        chromosomeBase  = 40;
-        // 遗传算法
-        ga();
-        startWriteToFile = true;
-        initForRestart();
-        memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
-        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
-            if(chromosome[0].geneSeq[tmpi]){
-                serverID[serverNum++] = tmpi;
-            }
-        }
+         chromosomeBase  = 100;
+         // 遗传算法
+         ga();
+         startWriteToFile = true;
+         initForRestart();
+         memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
+         for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
+             if(chromosome[0].geneSeq[tmpi]){
+                 serverID[serverNum++] = tmpi;
+             }
+         }
     }else if(200<networkNodeNum && networkNodeNum <500){
         chromosomeBase  = 20;
         // 遗传算法
@@ -1588,15 +1717,23 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         printf("PathNum:%d, RentCost:%d, ServerNum:%d, CostPerServer:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, costPerServer,  allCost+costPerServer*serverNum);
         printf("and serverID:");
         for(int i=0; i<serverNum; i++){
-            printf("%d\t", serverID[i]);
+            printf("%d, ", serverID[i]);
         }
         printf("\n");
         printf("write the networkPathNum:%d\n", networkPathNum);
-        char tmp[6];
-        int charNum = sprintf(tmp, "%d", networkPathNum);
-        for(int i=0; i<charNum; i++){
-            // PRINT("%c", tmp[i]);
-            *(topo_file+i) = tmp[i];
+    
+        int charNum = sprintf(topoFileCurPointer, "%d\n\n", networkPathNum);
+        topoFileCurPointer += charNum;
+
+        for(int i=0; topoFileLine[i].size(); i++){
+            for(int tmpi=0; tmpi<(int)topoFileLine[i].size()-1; tmpi++){
+                charNum = sprintf(topoFileCurPointer, "%d ", topoFileLine[i][topoFileLine[i].size()-1-tmpi]);
+                topoFileCurPointer += charNum;
+                // printf("%d, ", topoFileLine[i][topoFileLine[i].size()-1-tmpi]);
+            }
+            charNum = sprintf(topoFileCurPointer, "\n");
+            topoFileCurPointer += charNum;
+            // printf("\n");
         }
     } else {
         printf("ERROR: you are failed\n");
@@ -1605,8 +1742,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     ftime(&curTime);
     printf("END you have execute time:%ldms\n", (curTime.time-startTime.time)*1000 + (curTime.millitm - startTime.millitm));
 
-    *(--topoFileCurPointer) = 0;    // 去除多余的空行
-    
 	// 直接调用输出文件的方法输出到指定文件中(ps请注意格式的正确性，如果有解，第一行只有一个数据；第二行为空；第三行开始才是具体的数据，数据之间用一个空格分隔开)
 	write_result((const char *)topo_file, filename);
 
