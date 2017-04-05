@@ -96,6 +96,10 @@ int chromosomeAllNum;
 int chromoKeepNum;
 int geneNumPerChromo;
 double crossoverProbability = CROSSOVER_PROBABILITY;
+double addProbabilityUp = 0.1;
+double delProbabilityUp = 0.9;
+double moveProbabilityUp = 1;
+
 typedef struct Chromosome{
     bool haveCalc;      // 已经计算的就不要重复计算了
     bitset<NETWORK_NODE_MAX_NUM> geneSeq;      // bool类型比char类型快了10ms左右
@@ -938,7 +942,7 @@ bool fitness()
 {
     printf("==ga_fitness\n");
     int serverID[NETWORK_NODE_MAX_NUM];
-    int serverNum = 0;
+    int serverNum;
     PRINT("chromosomeAllNum:%d\n", chromosomeAllNum);
     vector<int> haveComeOut;
     for(int i=0; i<chromosomeAllNum; i++){
@@ -988,6 +992,7 @@ bool fitness()
             PRINT("have no path \n");
             chromosome[i].cost = MAXINT;
         }
+        while(1);
         ftime(&curTime);
         if((curTime.time-startTime.time)*1000 + (curTime.millitm-startTime.millitm) > ITERATION_TIME){
             printf("gaExeCount:%d\n", gaExeCount);
@@ -1037,7 +1042,7 @@ int runnerGambleGetChromo()
     }
     for(int i=0; i<chromoKeepNum; i++){
         if((chromosome[i].probability_down < probability) && (probability <= chromosome[i].probability_up)){
-            printf("runnerGambleGetChromo return %d\n", i);
+            PRINT("runnerGambleGetChromo return %d\n", i);
             return i;
         }
     }
@@ -1091,15 +1096,45 @@ void mutation()
     printf("==ga_mutation\n");
     int mutationChildStartIndex =  chromoKeepNum +  chromoKeepNum*crossoverProbability*2;
     int mutationNum = chromosomeAllNum - mutationChildStartIndex;   //计算变异的染色体数目
+    int serverID[NETWORK_NODE_MAX_NUM], serverNum=0;
+    delProbabilityUp *= ga_Tdelta;
+    if(delProbabilityUp < 0.2)  delProbabilityUp = 0.2;
     for(int i = 0; i < mutationNum; i ++) {   
-        int mutationChromoID = rand() % chromoKeepNum;                    //计算哪条染色体发生变异
+        int mutationChromoID = 0; // rand() % chromoKeepNum;                    //计算哪条染色体发生变异
         // for(int tmpi=0; tmpi<geneNumPerChromo*VARIATION_PROBABILITY_DOWN; tmpi++){
+        int conNetNodeIDRand = 0;
+        int tempIndex = 0;
+        serverNum = 0;
+        for(int tmpi=0; tmpi<geneNumPerChromo; tmpi++){
+            if(chromosome[mutationChromoID].geneSeq[tmpi]){
+                serverID[serverNum++] = tmpi;
+            }
+        }
+        chromosome[mutationChildStartIndex+i].geneSeq = chromosome[mutationChromoID].geneSeq;
+        chromosome[mutationChildStartIndex+i].haveCalc = false;
         for(int tmpi=0; tmpi<3; tmpi++){
-            int mutationGenePlace = rand() % geneNumPerChromo;          //计算发生变异的染色体上需要变异的基因位点
-            chromosome[mutationChildStartIndex+i].geneSeq = chromosome[mutationChromoID].geneSeq;
-            chromosome[mutationChildStartIndex+i].haveCalc = false;
-            // chromosome[mutationChildStartIndex+i].geneSeq.flip(mutationGenePlace);
-            chromosome[mutationChildStartIndex+i].geneSeq.flip(mutationGenePlace);
+            double randProbability = (rand() % 100) / 100.0;
+            // int mutationGunePlace = userNode[rand() % userNodeNum].conNetNodeID;
+
+            int mutationGenePlace = serverID[rand() % serverNum];
+            if(randProbability<addProbabilityUp){
+                mutationGenePlace = serverID[rand() % serverNum];
+                conNetNodeIDRand = rand() % networkNode[mutationGenePlace].adjoinPoint.size();
+                tempIndex = networkNode[mutationGenePlace].adjoinPoint[conNetNodeIDRand];
+                chromosome[mutationChildStartIndex+i].geneSeq.set(tempIndex);
+                printf("[%d] randProbability:%f, delProbabilityUp:%f, add serverID:%d,\n", mutationChromoID, randProbability, delProbabilityUp, mutationGenePlace);
+            }else if(addProbabilityUp<randProbability && randProbability<delProbabilityUp){
+                mutationGenePlace = serverID[rand() % serverNum];
+                chromosome[mutationChildStartIndex+i].geneSeq.reset(mutationGenePlace);
+                printf("[%d] randProbability:%f, delProbabilityUp:%f, del serverID:%d\n", mutationChromoID, randProbability, delProbabilityUp, mutationGenePlace);
+            }else if(delProbabilityUp<randProbability && randProbability<moveProbabilityUp){
+                mutationGenePlace = serverID[rand() % serverNum];
+                chromosome[mutationChildStartIndex+i].geneSeq.reset(mutationGenePlace);
+                conNetNodeIDRand = rand() % networkNode[mutationGenePlace].adjoinPoint.size();
+                tempIndex = networkNode[mutationGenePlace].adjoinPoint[conNetNodeIDRand];
+                chromosome[mutationChildStartIndex+i].geneSeq.set(tempIndex);
+                printf("[%d] move serverID from %d to %d\n", mutationChromoID, mutationGenePlace, tempIndex);
+            }
         }
     } 
 }
@@ -1364,9 +1399,6 @@ void createNewAnswer(int source, int newAnswer){
         }
     }
     int conNetNodeIDRand = 0;
-    double addProbabilityUp = 0.1;
-    double delProbabilityUp = 0.9;
-    double moveProbabilityUp = 1;
     for(int i = 0; i < statusChangeNum; i ++){
         double randProbability = (rand() % 100) / 100.0;
         mutationGenePlace = serverID[rand() % serverNum];
@@ -1377,10 +1409,10 @@ void createNewAnswer(int source, int newAnswer){
             chromosome[newAnswer].geneSeq.reset(mutationGenePlace);
             printf("[%d] randProbability:%f, del serverID %d\n", source, randProbability, mutationGenePlace);
         }else if(delProbabilityUp<randProbability && randProbability<moveProbabilityUp){
-            chromosome[newAnswer].geneSeq[mutationGenePlace] = 0;
+            chromosome[newAnswer].geneSeq.reset(mutationGenePlace);
             conNetNodeIDRand = rand() % networkNode[mutationGenePlace].adjoinPoint.size();
             tempIndex = networkNode[mutationGenePlace].adjoinPoint[conNetNodeIDRand];
-            chromosome[newAnswer].geneSeq[tempIndex] = 1;
+            chromosome[newAnswer].geneSeq.set(tempIndex);
             printf("[%d] move serverID from %d to %d\n", source, mutationGenePlace, tempIndex);
         }
     }
@@ -1521,17 +1553,6 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     // networkNodeNum+1 = superCollectionPoint
     PRINT("=======================\n");
     printf("NetworkNodeNum:%d, NetworkLinkNum:%d, UserNodeNum:%d, AllCost:%d\n", networkNodeNum, networkLinkNum, userNodeNum, allCost);
-    // if(networkNodeNum > 500){
-    //     memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
-    //     startWriteToFile = true;
-    //     initForRestart();
-
-    //     for(int tmpi=0; tmpi<userNodeNum; tmpi++){
-    //         serverID[serverNum++] = userNode[tmpi].conNetNodeID;
-    //     }
-    //     goto UP_500;
-    // }
-    //
     PRINT("start, end, band, cost, flow\n");
     for (i=0; i<NETWORK_NODE_MAX_NUM; i++) {
         if (networkNode[i].nextEdge == NULL) {
@@ -1588,7 +1609,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
         printf("PathNum:%d, RentCost:%d, ServerNum:%d, CostPerServer:%d, AllCost:%d\n", networkPathNum, allCost, serverNum, costPerServer,  allCost+costPerServer*serverNum);
         printf("and serverID:");
         for(int i=0; i<serverNum; i++){
-            printf("%d\t", serverID[i]);
+            printf("%d ", serverID[i]);
         }
         printf("\n");
         printf("write the networkPathNum:%d\n", networkPathNum);
