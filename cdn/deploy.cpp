@@ -373,6 +373,7 @@ struct node{
         return distToStart > networkNode.distToStart;
     }         
 };  
+
 // start:networkNodeNum, End:networkNodeNum+1
 int dijkstra(int networkNodeIDStart,int networkNodeIDEnd, int *preNetworkNodeID)
 {
@@ -888,10 +889,10 @@ void insertionSortChromo(int low, int high)
         Chromosome tmp = chromosome[i];
         j = i-1;
         while(j>=low && chromosome[j].cost > tmp.cost){
-           // chromosome[j+1] = chromosome[j];
-            Chromosome tmp = chromosome[j+1];
+            // chromosome[j+1] = chromosome[j];
+            // Chromosome tmp = chromosome[j+1];
             chromosome[j+1] = chromosome[j];
-            chromosome[j] = tmp;
+            // chromosome[j] = tmp;
             j--;
         }
         chromosome[j+1] = tmp;
@@ -1876,7 +1877,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
     initForRestart();
     memset(serverID, -1, sizeof(NETWORK_NODE_MAX_NUM));
     if(0<networkNodeNum && networkNodeNum<200){
-        chromosomeBase  = 40;
+        chromosomeBase  = 20;
 		crossoverProbability = 0.3;
 		crossoverProbabilityDown = 0.6;
         variationProbability = 0.3;
@@ -1892,7 +1893,7 @@ void deploy_server(char * topo[MAX_EDGE_NUM], int line_num,char * filename)
             }
         }
     }else if(200<networkNodeNum && networkNodeNum <500){
-        chromosomeBase  = 20;
+        chromosomeBase  = 10;
         crossoverProbability = 0.6;
 		crossoverProbabilityDown = 0.6;
         variationProbability = 0.3;
